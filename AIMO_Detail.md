@@ -504,7 +504,7 @@ LLMへ必ず指示する：
 
 14.3 ゼロ保持の方針
 	•	外部APIは「入力データを学習に使わない」契約形態を推奨
-	•	APIキーは .env で管理し、リポジトリに含めない
+	•	APIキーは .env.local で管理し、リポジトリに含めない
 
 ⸻
 
@@ -616,7 +616,7 @@ schemas/
 19. Cursor実装手順（v1.4）
 
 Step 1：プロジェクト雛形＋DBスキーマ
-	•	ディレクトリ構造、.env、DuckDBスキーマ、Run管理（runs/input_files）を整備
+	•	ディレクトリ構造、.env.local、DuckDBスキーマ、Run管理（runs/input_files）を整備
 
 Step 2：ベンダー別Ingestor（1製品から開始）
 	•	Palo Alto または Zscaler を最初に実装し Canonical Event 正規化を確認

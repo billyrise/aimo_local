@@ -18,6 +18,27 @@ This runbook provides procedures for operating and troubleshooting the AIMO Anal
 
 ---
 
+## DuckDB Configuration
+
+### temp_directory設定（必須）
+
+DuckDBはWALや.tmpディレクトリ等を作成するため、DBとtemp_directoryはローカルSSDの書込み可能領域に固定する。
+
+**規約**:
+- `temp_directory`はDBと同じディレクトリ配下に配置（デフォルト: `{db_pathの親ディレクトリ}/duckdb_tmp`）
+- 起動時に必ず `SET temp_directory` を実行
+- パスをログに出力（監査用）
+
+**実装**:
+- `src/db/duckdb_client.py`で自動設定
+- ログ出力: `DuckDB temp_directory: {path}`
+
+**確認方法**:
+```bash
+# 実行ログで確認
+grep "DuckDB temp_directory" <execution_log>
+```
+
 ## Daily Operations
 
 ### Health Check
@@ -36,17 +57,32 @@ python -m src.cli cache-stats
 ### Manual Run
 
 ```bash
-# Standard run
-python -m src.main run
+# Standard run (LLM無し)
+python src/main.py <input_file> --vendor <vendor>
 
-# Dry run (no writes)
-python -m src.main run --dry-run
+# Standard run (LLM有り)
+export OPENAI_API_KEY=<your_key>
+python src/main.py <input_file> --vendor <vendor>
 
-# Specific vendor only
-python -m src.main run --vendor zscaler
+# 実行ログの確認
+# - duckdb_path / temp_directory
+# - rule_hit / unknown_count
+# - llm_analyzed_count / needs_review_count / cache_hit_rate
+# - thresholds_used / seed(run_id)
+```
 
-# Resume from checkpoint
-python -m src.main run --resume --run-id <run_id>
+### E2E検証
+
+```bash
+# A) LLM無しE2E検証
+python src/main.py sample_logs/paloalto_sample.csv --vendor paloalto
+
+# B) LLM有りE2E検証
+export OPENAI_API_KEY=<your_key>
+python src/main.py sample_logs/paloalto_sample.csv --vendor paloalto
+
+# レポートのバリデーション確認
+python -m pytest tests/test_e2e_validation.py -v
 ```
 
 ---
@@ -243,7 +279,7 @@ ls -la data/output/
 
 1. **Memory exhaustion**:
    - Verify constant_memory=True in excel_template_spec.json
-   - Reduce EXCEL_MAX_ROWS in .env
+   - Reduce EXCEL_MAX_ROWS in .env.local
    - Export large tables to Parquet instead
 
 2. **Disk space**:
