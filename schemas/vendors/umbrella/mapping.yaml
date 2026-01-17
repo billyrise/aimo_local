@@ -1,0 +1,52 @@
+# Cisco Umbrella DNS / Web / Proxy Log Mapping
+# Reference: Cisco Umbrella Log Management Documentation
+# Note: Schema versioning affects field order and names
+
+vendor: umbrella
+product: cisco_umbrella
+event_type: web
+
+timestamp:
+  candidates: ["timestamp", "datetime", "time", "Timestamp"]
+  parse:
+    default:
+      type: "iso8601_or_epoch"
+      timezone_default: "UTC"
+
+action:
+  field_candidates: ["action", "verdict", "policy_action", "Action"]
+  map:
+    allow: ["Allowed", "ALLOW", "1", "allowed", "Proxied"]
+    block: ["Blocked", "BLOCK", "0", "blocked", "Denied"]
+  default: "unknown"
+
+# DNS-specific fields
+dns:
+  domain_candidates: ["domain", "query", "dst_domain", "Domain"]
+  query_type_candidates: ["queryType", "record_type"]
+  response_code_candidates: ["responseCode", "rcode"]
+
+url:
+  full_candidates: ["url", "destination", "request_url", "URL", "Destination URL"]
+  domain_from_url: true
+
+bytes:
+  sent_candidates: ["request_size", "bytes_sent", "tx", "requestSize"]
+  recv_candidates: ["response_size", "bytes_received", "rx", "responseSize"]
+
+identity:
+  user_candidates: ["identity", "user", "Identity", "internalIp"]
+  src_ip_candidates: ["internalIp", "Internal IP", "srcip", "src_ip"]
+  dst_ip_candidates: ["externalIp", "External IP", "dstip", "dst_ip"]
+
+category:
+  candidates: ["categories", "Category", "category"]
+
+# Umbrella-specific
+policy:
+  candidates: ["policyIdentity", "Policy Identity", "policy"]
+
+notes: |
+  Cisco Umbrella uses schema versioning for log exports.
+  Field order and naming may change between schema versions.
+  Reference: https://docs.umbrella.com/deployment-umbrella/docs/log-management

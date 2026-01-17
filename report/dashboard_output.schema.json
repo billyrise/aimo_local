@@ -1,0 +1,210 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schemas/dashboard_output.schema.json",
+  "title": "AIMO Dashboard Output",
+  "description": "JSON output format for dashboard integration and external systems",
+  "type": "object",
+  "required": ["run_id", "generated_at", "kpis", "summary", "series", "drilldown"],
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "description": "Unique identifier for this analysis run"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp when this output was generated"
+    },
+    "target_period": {
+      "type": "object",
+      "properties": {
+        "start": {"type": "string", "format": "date"},
+        "end": {"type": "string", "format": "date"}
+      }
+    },
+    "kpis": {
+      "type": "object",
+      "description": "Key performance indicators",
+      "properties": {
+        "total_events": {"type": "integer"},
+        "unique_users": {"type": "integer"},
+        "unique_signatures": {"type": "integer"},
+        "unique_domains": {"type": "integer"},
+        "genai_services_detected": {"type": "integer"},
+        "high_risk_events_pct": {"type": "number"},
+        "cache_hit_rate": {"type": "number"},
+        "unknown_rate": {"type": "number"},
+        "llm_cost_usd": {"type": "number"}
+      }
+    },
+    "summary": {
+      "type": "object",
+      "description": "Summary statistics",
+      "properties": {
+        "by_risk_level": {
+          "type": "object",
+          "properties": {
+            "high": {"type": "integer"},
+            "medium": {"type": "integer"},
+            "low": {"type": "integer"}
+          }
+        },
+        "by_usage_type": {
+          "type": "object",
+          "additionalProperties": {"type": "integer"}
+        },
+        "by_category": {
+          "type": "object",
+          "additionalProperties": {"type": "integer"}
+        },
+        "by_action": {
+          "type": "object",
+          "properties": {
+            "allow": {"type": "integer"},
+            "block": {"type": "integer"},
+            "warn": {"type": "integer"}
+          }
+        },
+        "candidate_counts": {
+          "type": "object",
+          "properties": {
+            "A": {"type": "integer"},
+            "B": {"type": "integer"},
+            "C": {"type": "integer"}
+          }
+        }
+      }
+    },
+    "series": {
+      "type": "object",
+      "description": "Time series data for trend visualization",
+      "properties": {
+        "daily": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "date": {"type": "string", "format": "date"},
+              "total_events": {"type": "integer"},
+              "unique_users": {"type": "integer"},
+              "genai_events": {"type": "integer"},
+              "high_risk_events": {"type": "integer"},
+              "bytes_sent_total": {"type": "integer"}
+            }
+          }
+        },
+        "weekly": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "week_start": {"type": "string", "format": "date"},
+              "total_events": {"type": "integer"},
+              "unique_users": {"type": "integer"},
+              "unknown_pct": {"type": "number"},
+              "genai_pct": {"type": "number"},
+              "high_risk_pct": {"type": "number"}
+            }
+          }
+        }
+      }
+    },
+    "drilldown": {
+      "type": "object",
+      "description": "Detailed breakdowns for drill-down views",
+      "properties": {
+        "top_shadow_ai": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "properties": {
+              "service_name": {"type": "string"},
+              "category": {"type": "string"},
+              "risk_level": {"type": "string"},
+              "unique_users": {"type": "integer"},
+              "access_count": {"type": "integer"},
+              "bytes_sent_total": {"type": "integer"},
+              "first_seen": {"type": "string", "format": "date-time"},
+              "last_seen": {"type": "string", "format": "date-time"}
+            }
+          }
+        },
+        "top_high_risk_users": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "properties": {
+              "user_id": {"type": "string"},
+              "department": {"type": ["string", "null"]},
+              "total_bytes_sent": {"type": "integer"},
+              "high_risk_destinations": {"type": "integer"},
+              "genai_access_count": {"type": "integer"},
+              "burst_count": {"type": "integer"},
+              "risk_score": {"type": "number"}
+            }
+          }
+        },
+        "department_breakdown": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "department": {"type": "string"},
+              "user_count": {"type": "integer"},
+              "total_events": {"type": "integer"},
+              "high_risk_pct": {"type": "number"},
+              "genai_pct": {"type": "number"},
+              "avg_risk_score": {"type": "number"}
+            }
+          }
+        },
+        "policy_gaps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "dest_domain": {"type": "string"},
+              "service_name": {"type": "string"},
+              "allow_count": {"type": "integer"},
+              "block_count": {"type": "integer"},
+              "recommendation": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    "audit": {
+      "type": "object",
+      "description": "Audit trail information",
+      "properties": {
+        "run_key": {"type": "string"},
+        "input_manifest_hash": {"type": "string"},
+        "signature_version": {"type": "string"},
+        "rule_version": {"type": "string"},
+        "candidate_selection": {
+          "type": "object",
+          "properties": {
+            "A_count": {"type": "integer"},
+            "B_count": {"type": "integer"},
+            "C_count": {"type": "integer"},
+            "sample_rate": {"type": "number"},
+            "sample_seed": {"type": "string"}
+          }
+        },
+        "exclusions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {"type": "string"},
+              "condition": {"type": "string"},
+              "count": {"type": "integer"}
+            }
+          }
+        }
+      }
+    }
+  }
+}

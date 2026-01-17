@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schemas/llm/analysis_output.schema.json",
+  "title": "AIMO LLM Service Analysis Output",
+  "description": "Schema for LLM-generated service classification results",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["service_name", "usage_type", "risk_level", "category", "confidence", "rationale_short"],
+  "properties": {
+    "service_name": {
+      "type": "string",
+      "description": "Human-readable service name",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "usage_type": {
+      "type": "string",
+      "enum": ["business", "genai", "devtools", "storage", "social", "unknown"],
+      "description": "Primary usage classification for enterprise monitoring"
+    },
+    "risk_level": {
+      "type": "string",
+      "enum": ["low", "medium", "high"],
+      "description": "Risk level for enterprise data security"
+    },
+    "category": {
+      "type": "string",
+      "description": "Service category (e.g., Collaboration, Storage, GenAI, DevTools)",
+      "minLength": 1,
+      "maxLength": 50
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Classification confidence (0.0-1.0). Use <=0.5 if uncertain."
+    },
+    "rationale_short": {
+      "type": "string",
+      "maxLength": 400,
+      "description": "Brief explanation for the classification decision"
+    },
+    "suggested_domains": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Optional: related domains that should share this classification"
+    },
+    "is_ai_service": {
+      "type": "boolean",
+      "description": "Whether this service has AI/ML capabilities that process user data"
+    }
+  }
+}

@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schemas/rule.schema.json",
+  "title": "AIMO Base Rule",
+  "description": "Schema for rule-based service classification in AIMO Analysis Engine",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["rule_id", "rule_version", "service_name", "category", "usage_type", "default_risk", "match"],
+  "properties": {
+    "rule_id": {
+      "type": "string",
+      "description": "Unique identifier for this rule",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "rule_version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Version number, increment when rule logic changes"
+    },
+    "service_name": {
+      "type": "string",
+      "description": "Human-readable service name for reporting"
+    },
+    "category": {
+      "type": "string",
+      "description": "Service category (e.g., Collaboration, Storage, GenAI)"
+    },
+    "usage_type": {
+      "type": "string",
+      "enum": ["business", "genai", "devtools", "storage", "social", "unknown"],
+      "description": "Primary usage classification"
+    },
+    "default_risk": {
+      "type": "string",
+      "enum": ["low", "medium", "high"],
+      "description": "Default risk level for this service"
+    },
+    "match": {
+      "type": "object",
+      "description": "Matching criteria (longest match + priority)",
+      "additionalProperties": false,
+      "required": ["domain_suffixes"],
+      "properties": {
+        "domain_suffixes": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Domain suffixes to match (e.g., 'openai.com')"
+        },
+        "domain_exact": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Exact domain matches (e.g., 'chat.openai.com')"
+        },
+        "url_regex": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Regex patterns for URL matching"
+        },
+        "path_prefix": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "URL path prefixes to match"
+        }
+      }
+    },
+    "notes": {
+      "type": "string",
+      "description": "Optional notes for rule maintainers"
+    },
+    "enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether this rule is active"
+    },
+    "priority": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 100,
+      "description": "Priority for conflict resolution (lower = higher priority)"
+    }
+  }
+}

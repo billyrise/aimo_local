@@ -1,0 +1,288 @@
+{
+  "workbook": {
+    "filename_template": "AIMO_Report_{run_id}_{date}.xlsx",
+    "author": "AIMO Analysis Engine",
+    "company": ""
+  },
+  "sheets": [
+    {
+      "name": "ExecutiveSummary",
+      "description": "High-level KPIs and risk overview for executives",
+      "tables": [
+        {
+          "name": "KPI",
+          "type": "summary",
+          "columns": ["Metric", "Value", "Trend"]
+        }
+      ],
+      "charts": [
+        {
+          "name": "RiskByCategory",
+          "type": "pie",
+          "data_source": "risk_distribution",
+          "position": "B15"
+        },
+        {
+          "name": "TopShadowAI",
+          "type": "bar",
+          "data_source": "top_shadow_ai",
+          "position": "H15"
+        }
+      ]
+    },
+    {
+      "name": "ShadowAI_Top10",
+      "description": "Top 10 Shadow AI services by usage",
+      "tables": [
+        {
+          "name": "TopShadowAI",
+          "type": "detail",
+          "columns": [
+            "Rank",
+            "Service",
+            "Category",
+            "Risk",
+            "UniqueUsers",
+            "AccessCount",
+            "BytesSent",
+            "FirstSeen",
+            "LastSeen"
+          ]
+        }
+      ],
+      "charts": []
+    },
+    {
+      "name": "HighRiskUsers_Top10",
+      "description": "Top 10 users by risk score",
+      "tables": [
+        {
+          "name": "TopRiskUsers",
+          "type": "detail",
+          "columns": [
+            "Rank",
+            "UserID",
+            "Department",
+            "TotalBytesSent",
+            "HighRiskDestinations",
+            "GenAIAccess",
+            "BurstCount",
+            "RiskScore"
+          ]
+        }
+      ],
+      "charts": []
+    },
+    {
+      "name": "Findings_A",
+      "description": "High-Volume Transfer findings (bytes_sent >= 1MB)",
+      "tables": [
+        {
+          "name": "A_Detail",
+          "type": "detail",
+          "max_rows": 1000,
+          "columns": [
+            "Timestamp",
+            "UserID",
+            "DestDomain",
+            "Service",
+            "Category",
+            "Risk",
+            "BytesSent",
+            "Method",
+            "Action"
+          ],
+          "overflow_note": "Full data available in Parquet export"
+        }
+      ],
+      "charts": []
+    },
+    {
+      "name": "Findings_B",
+      "description": "High-Risk Small Transfer findings (burst/cumulative/AI)",
+      "tables": [
+        {
+          "name": "B_Detail",
+          "type": "detail",
+          "max_rows": 1000,
+          "columns": [
+            "Timestamp",
+            "UserID",
+            "DestDomain",
+            "Service",
+            "Category",
+            "Risk",
+            "BytesSent",
+            "TriggerType",
+            "Action"
+          ],
+          "overflow_note": "Full data available in Parquet export"
+        }
+      ],
+      "charts": []
+    },
+    {
+      "name": "Findings_C",
+      "description": "Coverage Sample findings (2% random sample)",
+      "tables": [
+        {
+          "name": "C_Detail",
+          "type": "detail",
+          "max_rows": 500,
+          "columns": [
+            "Timestamp",
+            "UserID",
+            "DestDomain",
+            "Service",
+            "Category",
+            "Risk",
+            "BytesSent"
+          ],
+          "overflow_note": "Sample for audit coverage verification"
+        }
+      ],
+      "charts": []
+    },
+    {
+      "name": "DepartmentRisk",
+      "description": "Risk breakdown by department",
+      "tables": [
+        {
+          "name": "DeptRisk",
+          "type": "aggregation",
+          "columns": [
+            "Department",
+            "UserCount",
+            "TotalEvents",
+            "HighRiskPct",
+            "GenAIPct",
+            "AvgRiskScore"
+          ]
+        }
+      ],
+      "charts": [
+        {
+          "name": "DeptRiskHeatmap",
+          "type": "heatmap",
+          "data_source": "dept_risk_matrix",
+          "position": "H2"
+        }
+      ]
+    },
+    {
+      "name": "TimeSeries",
+      "description": "Trends over time (weekly/monthly)",
+      "tables": [
+        {
+          "name": "WeeklyTrend",
+          "type": "time_series",
+          "columns": [
+            "Week",
+            "TotalEvents",
+            "UnknownPct",
+            "GenAIPct",
+            "HighRiskPct",
+            "BlockedPct"
+          ]
+        }
+      ],
+      "charts": [
+        {
+          "name": "TrendLine",
+          "type": "line",
+          "data_source": "weekly_trend",
+          "position": "A20"
+        }
+      ]
+    },
+    {
+      "name": "AuditNarrative",
+      "description": "Audit documentation and methodology",
+      "tables": [
+        {
+          "name": "RunMetadata",
+          "type": "metadata",
+          "columns": ["Field", "Value"]
+        },
+        {
+          "name": "SamplingInfo",
+          "type": "metadata",
+          "columns": ["Parameter", "Value"]
+        },
+        {
+          "name": "Exclusions",
+          "type": "list",
+          "columns": ["ExclusionType", "Condition", "Count"]
+        }
+      ],
+      "charts": [],
+      "narrative_template": "report/audit_narrative_template.md"
+    },
+    {
+      "name": "PolicyGaps",
+      "description": "Destinations with allow/block inconsistencies",
+      "tables": [
+        {
+          "name": "PolicyGaps",
+          "type": "detail",
+          "columns": [
+            "DestDomain",
+            "Service",
+            "AllowCount",
+            "BlockCount",
+            "MixedActions",
+            "Recommendation"
+          ]
+        }
+      ],
+      "charts": []
+    }
+  ],
+  "formats": {
+    "header": {
+      "fill_color": "1F4E79",
+      "font_color": "FFFFFF",
+      "font_bold": true,
+      "font_size": 11
+    },
+    "subheader": {
+      "fill_color": "4472C4",
+      "font_color": "FFFFFF",
+      "font_bold": true,
+      "font_size": 10
+    },
+    "data": {
+      "font_size": 10,
+      "border": true
+    },
+    "number_formats": {
+      "bytes": "#,##0",
+      "percentage": "0.0%",
+      "date": "YYYY-MM-DD",
+      "datetime": "YYYY-MM-DD HH:MM:SS"
+    },
+    "conditional": {
+      "high_risk": {
+        "condition": "risk_level == 'high'",
+        "fill_color": "FFC7CE",
+        "font_color": "9C0006"
+      },
+      "medium_risk": {
+        "condition": "risk_level == 'medium'",
+        "fill_color": "FFEB9C",
+        "font_color": "9C6500"
+      },
+      "genai": {
+        "condition": "usage_type == 'genai'",
+        "fill_color": "C6EFCE",
+        "font_color": "006100"
+      }
+    }
+  },
+  "generation": {
+    "constant_memory": true,
+    "chunk_size": 1000,
+    "max_sheet_rows": 1048576,
+    "overflow_to_parquet": true
+  }
+}

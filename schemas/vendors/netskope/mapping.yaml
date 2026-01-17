@@ -1,0 +1,58 @@
+# Netskope WebTX / Transaction Log Mapping
+# Reference: Google SecOps Netskope WebTX Parser
+# Fields: cs-bytes, sc-bytes, date, time, c-ip, url, etc.
+
+vendor: netskope
+product: netskope
+event_type: web
+
+timestamp:
+  candidates: ["timestamp", "event_timestamp", "date", "time"]
+  parse:
+    timestamp:
+      type: "epoch_ms_or_iso8601"
+      timezone_default: "UTC"
+    event_timestamp:
+      type: "epoch_ms_or_iso8601"
+      timezone_default: "UTC"
+    date_time_combo:
+      type: "w3c_date_time"
+      timezone_default: "UTC"
+
+bytes:
+  # W3C-style naming (cs = client-to-server, sc = server-to-client)
+  sent_candidates: ["cs-bytes", "clientBytes", "bytes_sent", "upload", "sent_bytes"]
+  recv_candidates: ["sc-bytes", "serverBytes", "bytes_received", "download", "recv_bytes"]
+
+action:
+  field_candidates: ["action", "cs-activity", "eventType", "activity"]
+  map:
+    allow: ["allowed", "allow", "permitted", "pass", "success", "Allowed"]
+    block: ["blocked", "block", "denied", "deny", "policy_denied", "Blocked"]
+  default: "unknown"
+
+url:
+  full_candidates: ["url", "cs-uri", "request", "dst_url"]
+  domain_from_url: true
+
+identity:
+  user_candidates: ["user", "cs-username", "srcuser", "userPrincipalName"]
+  src_ip_candidates: ["c-ip", "srcip", "client_ip", "src_ip"]
+  dst_ip_candidates: ["s-ip", "dstip", "server_ip", "dst_ip"]
+
+method:
+  candidates: ["cs-method", "method", "request_method"]
+
+app:
+  candidates: ["app", "application", "appName"]
+
+category:
+  candidates: ["category", "app_category", "urlCategory"]
+
+device:
+  candidates: ["device", "device_name", "hostname"]
+
+notes: |
+  Netskope field names follow W3C Extended Log Format conventions.
+  cs-* = client-to-server, sc-* = server-to-client.
+  Reference: Google SecOps Netskope WebTX Parser

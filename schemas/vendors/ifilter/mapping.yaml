@@ -1,0 +1,56 @@
+# Digital Arts i-FILTER Log Mapping
+# Reference: i-FILTER Access Log Format
+# Note: Default timezone is Asia/Tokyo for Japanese deployments
+
+vendor: ifilter
+product: i-filter
+event_type: web
+
+timestamp:
+  candidates: ["date", "time", "timestamp", "日時", "アクセス日時"]
+  parse:
+    date_time_combo:
+      type: "local_date_time"
+      timezone_default: "Asia/Tokyo"
+    timestamp:
+      type: "iso8601_or_epoch"
+      timezone_default: "Asia/Tokyo"
+
+url:
+  full_candidates: ["url", "request_url", "URL", "アクセス先URL"]
+  domain_from_url: true
+  host_candidates: ["host", "サーバ名"]
+
+bytes:
+  sent_candidates: ["bytes_sent", "upload", "reqsize", "送信バイト数"]
+  recv_candidates: ["bytes_received", "download", "respsize", "受信バイト数"]
+
+action:
+  field_candidates: ["action", "result", "judgement", "判定結果", "アクション"]
+  map:
+    allow: ["ALLOW", "OK", "PERMIT", "許可", "通過"]
+    block: ["BLOCK", "NG", "DENY", "規制", "ブロック"]
+  default: "unknown"
+
+identity:
+  user_candidates: ["user", "username", "ユーザ名", "ユーザID", "user_id"]
+  src_ip_candidates: ["client_ip", "src_ip", "クライアントIP", "送信元IP"]
+
+method:
+  candidates: ["method", "http_method", "メソッド"]
+
+status_code:
+  candidates: ["status", "status_code", "ステータスコード"]
+
+category:
+  candidates: ["category", "カテゴリ", "カテゴリ名", "規制カテゴリ"]
+
+# i-FILTER specific
+filter_rule:
+  candidates: ["rule", "filter_rule", "規制ルール", "フィルタルール"]
+
+notes: |
+  i-FILTER is primarily used in Japan.
+  Log field names may be in Japanese depending on export settings.
+  Default timezone is JST (Asia/Tokyo).
+  Reference: Digital Arts i-FILTER documentation

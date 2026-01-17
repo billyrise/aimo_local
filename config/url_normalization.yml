@@ -1,0 +1,85 @@
+# URL normalization configuration (deterministic)
+# NOTE: Any behavioral change here that can affect signatures MUST bump signature_version.
+
+signature_version: "1.0"
+
+host:
+  lowercase: true
+  remove_default_ports: true
+  normalize_punycode: true
+
+path:
+  collapse_slashes: true
+  remove_trailing_slash: true
+  # If true, decode percent-encodings where safe, then re-encode consistently.
+  normalize_percent_encoding: true
+
+query:
+  # Default: keep nothing (avoid cache fragmentation). Only keep whitelisted keys if explicitly configured.
+  # These kept keys become "key_param_subset" in signature generation (see spec 6.3)
+  keep_keys_whitelist: []
+  sort_keys: true
+  drop_empty_values: true
+
+  # Keys to always drop (tracking/ads/email/social/referrer/session/debug)
+  drop_keys_exact:
+    - "gclid"
+    - "dclid"
+    - "fbclid"
+    - "msclkid"
+    - "ttclid"
+    - "twclid"
+    - "igshid"
+    - "mc_cid"
+    - "mc_eid"
+    - "yclid"
+    - "_ga"
+    - "_gl"
+    - "ref"
+    - "referrer"
+    - "session"
+    - "sid"
+    - "phpsessid"
+    - "srsltid"
+    - "spm"
+    - "utm_id"
+
+  drop_keys_prefix:
+    - "utm_"
+
+redaction:
+  # Apply redactions BEFORE signature hashing.
+  # Each rule replaces matches with the given token.
+  rules:
+    - name: uuid
+      pattern: "(?i)\\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\b"
+      replace_with: ":uuid"
+
+    - name: long_hex
+      pattern: "(?i)\\b[0-9a-f]{16,}\\b"
+      replace_with: ":hex"
+
+    - name: base64url_token
+      pattern: "\\b[A-Za-z0-9_-]{20,}\\b"
+      replace_with: ":tok"
+
+    - name: email
+      pattern: "(?i)\\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}\\b"
+      replace_with: ":email"
+
+    - name: ipv4
+      pattern: "\\b(?:[0-9]{1,3}\\.){3}[0-9]{1,3}\\b"
+      replace_with: ":ip"
+
+    - name: numeric_id
+      pattern: "\\b[0-9]{6,}\\b"
+      replace_with: ":id"
+
+pii_detection:
+  # If any match occurs in url path/query, record it to pii_audit.
+  patterns:
+    - "(?i)password="
+    - "(?i)token="
+    - "(?i)apikey="
+    - "(?i)authorization="
+

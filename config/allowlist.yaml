@@ -1,0 +1,59 @@
+# AIMO Allowlist Configuration
+# 
+# Override default risk classifications for enterprise-approved services.
+# Use this to:
+#   1. Lower risk for enterprise-managed AI services
+#   2. Exempt internal services from Shadow AI detection
+#   3. Reclassify services based on organizational policy
+
+# -----------------------------------------------------------------------------
+# Allowlist Entries
+# -----------------------------------------------------------------------------
+
+allowlist:
+  # Example: Enterprise Azure OpenAI deployment
+  # - domain_suffix: "openai.azure.com"
+  #   override_risk: "low"
+  #   override_usage_type: "business"  # Treat as approved business tool
+  #   notes: "Enterprise Azure OpenAI subscription - IT approved"
+  
+  # Example: Internal AI service
+  # - domain_exact: "ai.internal.example.com"
+  #   override_risk: "low"
+  #   override_usage_type: "business"
+  #   notes: "Internal AI service hosted on corporate infrastructure"
+  
+  # Example: Enterprise Copilot (M365 managed)
+  # - domain_suffix: "copilot.microsoft.com"
+  #   override_risk: "medium"  # Lower from high to medium
+  #   notes: "M365 Copilot - enterprise licensed"
+
+# -----------------------------------------------------------------------------
+# Blocklist (Force High Risk)
+# -----------------------------------------------------------------------------
+
+blocklist:
+  # Services that should always be flagged as high risk regardless of rules
+  # - domain_suffix: "suspicious-ai-service.com"
+  #   force_risk: "high"
+  #   force_usage_type: "genai"
+  #   notes: "Known data-harvesting AI service"
+
+# -----------------------------------------------------------------------------
+# Configuration Metadata
+# -----------------------------------------------------------------------------
+
+metadata:
+  # Version this file for change tracking
+  version: 1
+  
+  # Last updated
+  updated_at: "2026-01-17"
+  
+  # Approved by (for audit trail)
+  approved_by: ""
+  
+  # Notes
+  notes: |
+    This file should be reviewed and updated by IT Security team.
+    Changes require corresponding update to rule_version.

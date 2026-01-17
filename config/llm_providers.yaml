@@ -1,0 +1,81 @@
+# LLM Provider Configuration
+# NOTE: Pricing is subject to change. Always verify with official documentation.
+# Update pricing values before production use.
+
+default_provider: openai
+
+providers:
+  openai:
+    base_url: "https://api.openai.com/v1"
+    auth_env: "OPENAI_API_KEY"
+    model: "gpt-4o-mini"
+    # Structured outputs for reliable JSON
+    # Reference: https://platform.openai.com/docs/guides/structured-outputs
+    structured_output: true
+    # Request settings
+    timeout_seconds: 30
+    max_retries: 2
+    # Pricing (USD per 1M tokens) - UPDATE BEFORE PRODUCTION
+    # Source: https://openai.com/api/pricing/
+    pricing:
+      currency: "USD"
+      source: "OpenAI Pricing (verify current rates)"
+      input_per_1m_tokens: 0.15    # gpt-4o-mini input
+      output_per_1m_tokens: 0.60   # gpt-4o-mini output
+      # Alternative model pricing for reference:
+      # gpt-4o: input=2.50, output=10.00
+      # gpt-4-turbo: input=10.00, output=30.00
+
+  azure_openai:
+    base_url: "${AZURE_OPENAI_ENDPOINT}"
+    auth_env: "AZURE_OPENAI_API_KEY"
+    api_version: "2024-10-01-preview"
+    model: "${AZURE_OPENAI_DEPLOYMENT}"
+    structured_output: true
+    timeout_seconds: 30
+    max_retries: 2
+    pricing:
+      currency: "USD"
+      source: "Azure OpenAI Pricing (region-dependent)"
+      # Azure pricing varies by region; configure based on deployment
+      input_per_1m_tokens: 0.0
+      output_per_1m_tokens: 0.0
+
+  anthropic:
+    base_url: "https://api.anthropic.com/v1"
+    auth_env: "ANTHROPIC_API_KEY"
+    model: "claude-3-5-sonnet-20241022"
+    structured_output: false  # Use JSON mode via prompt
+    timeout_seconds: 60
+    max_retries: 2
+    pricing:
+      currency: "USD"
+      source: "Anthropic Pricing"
+      input_per_1m_tokens: 3.00
+      output_per_1m_tokens: 15.00
+
+# Budget control settings
+budget:
+  daily_limit_usd: 10.0
+  # Priority order when budget is exhausted:
+  # 1. A candidates (high-volume transfers) - always analyze
+  # 2. B candidates (high-risk small) - always analyze
+  # 3. C candidates (coverage sample) - skip if budget exhausted
+  priority_order: ["A", "B", "C"]
+  
+  # Cost estimation buffer (multiply estimated cost by this factor)
+  estimation_buffer: 1.2
+  
+  # Alert threshold (percentage of daily limit)
+  alert_threshold_pct: 80
+
+# Batching settings
+batching:
+  # Maximum signatures per LLM request
+  max_signatures_per_request: 20
+  
+  # Maximum total characters for samples in prompt
+  max_sample_chars: 8000
+  
+  # Use whichever limit is reached first
+  strategy: "min_of_both"

@@ -1,0 +1,94 @@
+# AIMO Candidate Selection Thresholds
+# 
+# These thresholds define A/B/C candidate selection criteria.
+# Changes here affect which events are flagged for analysis.
+# 
+# Reference: AIMO_Detail.md Section 8 (Risk Candidate Selection)
+
+# -----------------------------------------------------------------------------
+# A/B/C Candidate Definitions
+# -----------------------------------------------------------------------------
+
+candidates:
+  A:
+    description: "High-Volume Transfer - Single large upload event"
+    # Minimum bytes_sent for A classification
+    min_bytes_sent: 1048576  # 1 MB (1024 * 1024)
+    # Note: A candidates are ALWAYS analyzed regardless of other factors
+
+  B:
+    description: "High-Risk Small Transfer - Suspicious small events"
+    # B candidates must meet at least one of these conditions:
+    
+    # Condition 1: Write method to AI/Unknown destination
+    write_methods: ["POST", "PUT", "PATCH"]
+    high_risk_categories: ["GenAI", "AI", "Unknown", "Uncategorized"]
+    
+    # Condition 2: Burst behavior (many requests in short window)
+    burst:
+      window_seconds: 300  # 5 minutes
+      min_count: 20        # Events per user×domain×window
+    
+    # Condition 3: Cumulative daily transfer
+    cumulative:
+      window: "day"
+      min_bytes_sent: 20971520  # 20 MB (20 * 1024 * 1024)
+
+  C:
+    description: "Coverage Sample - Random sample from B-candidate small transfers"
+    # Sample rate for learning coverage (ensures small events are not zero-excluded)
+    sample_rate: 0.02  # 2%
+    
+    # C sampling applies to events that:
+    # - Are B candidates (burst/cumulative/high-risk destination)
+    # - AND bytes_sent < 1MB (small volume, not A candidates)
+    # 
+    # This ensures we sample from high-risk small transfers for audit coverage.
+    # Per spec 8.3: "B候補の bytes_sent < 1MB 帯から無作為2%"
+    
+    # Sampling is deterministic: seed is derived from run_id for reproducibility
+    seed_source: "run_id"
+
+# -----------------------------------------------------------------------------
+# Method Classification
+# -----------------------------------------------------------------------------
+
+method_groups:
+  GET: ["GET", "HEAD", "OPTIONS"]
+  WRITE: ["POST", "PUT", "PATCH", "DELETE"]
+  OTHER: []  # Catch-all for unknown methods
+
+# Default method group if http_method is null or unrecognized
+default_method_group: "OTHER"
+
+# -----------------------------------------------------------------------------
+# Audit Documentation Requirements
+# -----------------------------------------------------------------------------
+
+audit:
+  # These fields MUST be recorded for each run
+  required_fields:
+    - count_a        # Number of A candidates
+    - count_b        # Number of B candidates
+    - count_c        # Number of C candidates (sampled)
+    - sample_rate    # C sample rate used
+    - sample_seed    # Random seed (run_id derived)
+    - exclusions     # List of exclusion conditions applied
+    - total_events   # Total events processed
+    
+  # Narrative template reference
+  narrative_template: "report/audit_narrative_template.md"
+
+# -----------------------------------------------------------------------------
+# Performance Tuning
+# -----------------------------------------------------------------------------
+
+performance:
+  # Batch size for processing events (memory optimization)
+  event_batch_size: 100000
+  
+  # Window for burst detection aggregation
+  burst_window_align: "5min"  # Align to 5-minute boundaries
+  
+  # Pre-aggregation for cumulative detection
+  cumulative_preagg: true

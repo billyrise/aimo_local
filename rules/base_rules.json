@@ -1,0 +1,386 @@
+[
+  {
+    "rule_id": "saas_microsoft_365",
+    "rule_version": 1,
+    "service_name": "Microsoft 365",
+    "category": "Collaboration",
+    "usage_type": "business",
+    "default_risk": "low",
+    "match": {
+      "domain_suffixes": ["office.com", "office365.com", "microsoft.com", "sharepoint.com", "onenote.com", "outlook.com", "live.com", "microsoftonline.com"]
+    },
+    "notes": "Microsoft 365 core services. Business use assumed.",
+    "priority": 100
+  },
+  {
+    "rule_id": "saas_google_workspace",
+    "rule_version": 1,
+    "service_name": "Google Workspace",
+    "category": "Collaboration",
+    "usage_type": "business",
+    "default_risk": "low",
+    "match": {
+      "domain_suffixes": ["google.com", "googleusercontent.com", "gstatic.com", "googleapis.com", "googlevideo.com"]
+    },
+    "notes": "Gmail, Drive, Docs, etc. May include consumer Google services.",
+    "priority": 100
+  },
+  {
+    "rule_id": "saas_slack",
+    "rule_version": 1,
+    "service_name": "Slack",
+    "category": "Collaboration",
+    "usage_type": "business",
+    "default_risk": "low",
+    "match": {
+      "domain_suffixes": ["slack.com", "slack-edge.com", "slack-imgs.com", "slack-files.com"]
+    },
+    "notes": "Enterprise messaging platform.",
+    "priority": 100
+  },
+  {
+    "rule_id": "saas_teams",
+    "rule_version": 1,
+    "service_name": "Microsoft Teams",
+    "category": "Collaboration",
+    "usage_type": "business",
+    "default_risk": "low",
+    "match": {
+      "domain_suffixes": ["teams.microsoft.com", "teams.live.com"],
+      "domain_exact": ["teams.microsoft.com"]
+    },
+    "notes": "Microsoft Teams collaboration.",
+    "priority": 90
+  },
+  {
+    "rule_id": "saas_zoom",
+    "rule_version": 1,
+    "service_name": "Zoom",
+    "category": "Collaboration",
+    "usage_type": "business",
+    "default_risk": "medium",
+    "match": {
+      "domain_suffixes": ["zoom.us", "zoom.com", "zoomgov.com"]
+    },
+    "notes": "Video conferencing. Medium risk due to data sharing potential.",
+    "priority": 100
+  },
+  {
+    "rule_id": "saas_webex",
+    "rule_version": 1,
+    "service_name": "Cisco Webex",
+    "category": "Collaboration",
+    "usage_type": "business",
+    "default_risk": "low",
+    "match": {
+      "domain_suffixes": ["webex.com", "wbx2.com"]
+    },
+    "notes": "Cisco Webex collaboration suite.",
+    "priority": 100
+  },
+  {
+    "rule_id": "saas_box",
+    "rule_version": 1,
+    "service_name": "Box",
+    "category": "Storage",
+    "usage_type": "storage",
+    "default_risk": "medium",
+    "match": {
+      "domain_suffixes": ["box.com", "boxcdn.net", "boxcloud.com"]
+    },
+    "notes": "Enterprise cloud storage. Monitor for data exfiltration.",
+    "priority": 100
+  },
+  {
+    "rule_id": "saas_dropbox",
+    "rule_version": 1,
+    "service_name": "Dropbox",
+    "category": "Storage",
+    "usage_type": "storage",
+    "default_risk": "medium",
+    "match": {
+      "domain_suffixes": ["dropbox.com", "dropboxusercontent.com", "dropboxapi.com"]
+    },
+    "notes": "Cloud storage. Medium risk due to personal/business mixing.",
+    "priority": 100
+  },
+  {
+    "rule_id": "saas_onedrive",
+    "rule_version": 1,
+    "service_name": "OneDrive",
+    "category": "Storage",
+    "usage_type": "storage",
+    "default_risk": "low",
+    "match": {
+      "domain_exact": ["onedrive.live.com"],
+      "domain_suffixes": ["1drv.com", "1drv.ms"]
+    },
+    "notes": "Microsoft OneDrive. Lower risk if M365 managed.",
+    "priority": 90
+  },
+  {
+    "rule_id": "saas_gdrive",
+    "rule_version": 1,
+    "service_name": "Google Drive",
+    "category": "Storage",
+    "usage_type": "storage",
+    "default_risk": "medium",
+    "match": {
+      "domain_exact": ["drive.google.com", "docs.google.com", "sheets.google.com", "slides.google.com"]
+    },
+    "notes": "Google Drive and Docs. Personal/business mixing possible.",
+    "priority": 90
+  },
+  {
+    "rule_id": "dev_github",
+    "rule_version": 1,
+    "service_name": "GitHub",
+    "category": "DevTools",
+    "usage_type": "devtools",
+    "default_risk": "medium",
+    "match": {
+      "domain_suffixes": ["github.com", "githubusercontent.com", "github.io", "githubassets.com"]
+    },
+    "notes": "Code hosting. Monitor for code/secret exfiltration.",
+    "priority": 100
+  },
+  {
+    "rule_id": "dev_gitlab",
+    "rule_version": 1,
+    "service_name": "GitLab",
+    "category": "DevTools",
+    "usage_type": "devtools",
+    "default_risk": "medium",
+    "match": {
+      "domain_suffixes": ["gitlab.com", "gitlab.io"]
+    },
+    "notes": "Code hosting and CI/CD.",
+    "priority": 100
+  },
+  {
+    "rule_id": "dev_bitbucket",
+    "rule_version": 1,
+    "service_name": "Bitbucket",
+    "category": "DevTools",
+    "usage_type": "devtools",
+    "default_risk": "medium",
+    "match": {
+      "domain_suffixes": ["bitbucket.org", "bitbucket.io"]
+    },
+    "notes": "Atlassian code hosting.",
+    "priority": 100
+  },
+  {
+    "rule_id": "dev_stackoverflow",
+    "rule_version": 1,
+    "service_name": "Stack Overflow",
+    "category": "DevTools",
+    "usage_type": "devtools",
+    "default_risk": "low",
+    "match": {
+      "domain_suffixes": ["stackoverflow.com", "stackexchange.com", "sstatic.net"]
+    },
+    "notes": "Developer Q&A. Generally read-only, low risk.",
+    "priority": 100
+  },
+  {
+    "rule_id": "genai_chatgpt_openai",
+    "rule_version": 1,
+    "service_name": "ChatGPT / OpenAI",
+    "category": "GenAI",
+    "usage_type": "genai",
+    "default_risk": "high",
+    "match": {
+      "domain_suffixes": ["openai.com"],
+      "domain_exact": ["chat.openai.com", "api.openai.com", "platform.openai.com"]
+    },
+    "notes": "PRIMARY Shadow AI detection target. High risk for data input.",
+    "priority": 50
+  },
+  {
+    "rule_id": "genai_anthropic_claude",
+    "rule_version": 1,
+    "service_name": "Claude / Anthropic",
+    "category": "GenAI",
+    "usage_type": "genai",
+    "default_risk": "high",
+    "match": {
+      "domain_suffixes": ["anthropic.com"],
+      "domain_exact": ["claude.ai", "api.anthropic.com", "console.anthropic.com"]
+    },
+    "notes": "Anthropic Claude AI assistant.",
+    "priority": 50
+  },
+  {
+    "rule_id": "genai_google_gemini",
+    "rule_version": 1,
+    "service_name": "Google Gemini",
+    "category": "GenAI",
+    "usage_type": "genai",
+    "default_risk": "high",
+    "match": {
+      "domain_exact": ["gemini.google.com", "bard.google.com", "aistudio.google.com"],
+      "domain_suffixes": ["generativelanguage.googleapis.com"]
+    },
+    "notes": "Google Gemini/Bard AI.",
+    "priority": 50
+  },
+  {
+    "rule_id": "genai_microsoft_copilot",
+    "rule_version": 1,
+    "service_name": "Microsoft Copilot",
+    "category": "GenAI",
+    "usage_type": "genai",
+    "default_risk": "high",
+    "match": {
+      "domain_exact": ["copilot.microsoft.com", "copilot.cloud.microsoft", "bing.com/chat"],
+      "domain_suffixes": ["copilot.microsoft.com"]
+    },
+    "notes": "Microsoft Copilot (standalone). M365 Copilot may be enterprise-managed.",
+    "priority": 50
+  },
+  {
+    "rule_id": "genai_perplexity",
+    "rule_version": 1,
+    "service_name": "Perplexity AI",
+    "category": "GenAI",
+    "usage_type": "genai",
+    "default_risk": "high",
+    "match": {
+      "domain_suffixes": ["perplexity.ai"]
+    },
+    "notes": "AI-powered search engine.",
+    "priority": 50
+  },
+  {
+    "rule_id": "genai_midjourney",
+    "rule_version": 1,
+    "service_name": "Midjourney",
+    "category": "GenAI",
+    "usage_type": "genai",
+    "default_risk": "high",
+    "match": {
+      "domain_suffixes": ["midjourney.com"]
+    },
+    "notes": "AI image generation.",
+    "priority": 50
+  },
+  {
+    "rule_id": "genai_stability",
+    "rule_version": 1,
+    "service_name": "Stability AI",
+    "category": "GenAI",
+    "usage_type": "genai",
+    "default_risk": "high",
+    "match": {
+      "domain_suffixes": ["stability.ai", "dreamstudio.ai"]
+    },
+    "notes": "Stable Diffusion and related AI tools.",
+    "priority": 50
+  },
+  {
+    "rule_id": "genai_huggingface",
+    "rule_version": 1,
+    "service_name": "Hugging Face",
+    "category": "GenAI",
+    "usage_type": "genai",
+    "default_risk": "high",
+    "match": {
+      "domain_suffixes": ["huggingface.co", "hf.co"]
+    },
+    "notes": "ML model hub. High risk if uploading data/models.",
+    "priority": 50
+  },
+  {
+    "rule_id": "genai_replicate",
+    "rule_version": 1,
+    "service_name": "Replicate",
+    "category": "GenAI",
+    "usage_type": "genai",
+    "default_risk": "high",
+    "match": {
+      "domain_suffixes": ["replicate.com", "replicate.delivery"]
+    },
+    "notes": "AI model hosting and inference.",
+    "priority": 50
+  },
+  {
+    "rule_id": "genai_deepl",
+    "rule_version": 1,
+    "service_name": "DeepL",
+    "category": "GenAI",
+    "usage_type": "genai",
+    "default_risk": "medium",
+    "match": {
+      "domain_suffixes": ["deepl.com"]
+    },
+    "notes": "AI translation. Medium risk (text input).",
+    "priority": 60
+  },
+  {
+    "rule_id": "genai_grammarly",
+    "rule_version": 1,
+    "service_name": "Grammarly",
+    "category": "GenAI",
+    "usage_type": "genai",
+    "default_risk": "medium",
+    "match": {
+      "domain_suffixes": ["grammarly.com", "grammarly.io"]
+    },
+    "notes": "AI writing assistant. Medium risk (document content).",
+    "priority": 60
+  },
+  {
+    "rule_id": "genai_notion_ai",
+    "rule_version": 1,
+    "service_name": "Notion AI",
+    "category": "GenAI",
+    "usage_type": "genai",
+    "default_risk": "medium",
+    "match": {
+      "domain_suffixes": ["notion.so", "notion.site"],
+      "path_prefix": ["/api/v3/runBlock"]
+    },
+    "notes": "Notion with AI features. Detect AI-specific API calls if possible.",
+    "priority": 70
+  },
+  {
+    "rule_id": "social_twitter",
+    "rule_version": 1,
+    "service_name": "X (Twitter)",
+    "category": "Social",
+    "usage_type": "social",
+    "default_risk": "medium",
+    "match": {
+      "domain_suffixes": ["twitter.com", "x.com", "twimg.com"]
+    },
+    "notes": "Social media. Monitor for data leakage via posts.",
+    "priority": 100
+  },
+  {
+    "rule_id": "social_linkedin",
+    "rule_version": 1,
+    "service_name": "LinkedIn",
+    "category": "Social",
+    "usage_type": "social",
+    "default_risk": "low",
+    "match": {
+      "domain_suffixes": ["linkedin.com", "licdn.com"]
+    },
+    "notes": "Professional networking. Generally low risk.",
+    "priority": 100
+  },
+  {
+    "rule_id": "social_facebook",
+    "rule_version": 1,
+    "service_name": "Facebook / Meta",
+    "category": "Social",
+    "usage_type": "social",
+    "default_risk": "medium",
+    "match": {
+      "domain_suffixes": ["facebook.com", "fb.com", "fbcdn.net", "instagram.com"]
+    },
+    "notes": "Social media. Medium risk for data sharing.",
+    "priority": 100
+  }
+]

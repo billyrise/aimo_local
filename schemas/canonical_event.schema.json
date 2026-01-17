@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schemas/canonical_event.schema.json",
+  "title": "AIMO Canonical Event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_time",
+    "vendor",
+    "log_type",
+    "user_id",
+    "dest_host",
+    "dest_domain",
+    "url_full",
+    "action",
+    "bytes_sent",
+    "bytes_received",
+    "ingest_file",
+    "ingest_lineage_hash"
+  ],
+  "properties": {
+    "event_time": {
+      "description": "Event time in ISO-8601 (UTC recommended).",
+      "type": "string",
+      "format": "date-time"
+    },
+    "vendor": {
+      "type": "string",
+      "enum": [
+        "paloalto",
+        "zscaler",
+        "netskope",
+        "mdca",
+        "umbrella",
+        "bluecoat",
+        "skyhigh",
+        "ifilter",
+        "other"
+      ]
+    },
+    "log_type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "user_id": {
+      "description": "Customer-provided stable pseudonymous identifier (hashed ok).",
+      "type": "string",
+      "minLength": 1
+    },
+    "user_dept": { "type": ["string", "null"] },
+    "device_id": { "type": ["string", "null"] },
+    "src_ip": { "type": ["string", "null"] },
+
+    "dest_host": {
+      "description": "Destination FQDN (lowercase preferred).",
+      "type": "string",
+      "minLength": 1
+    },
+    "dest_domain": {
+      "description": "Effective TLD+1 derived from Public Suffix List.",
+      "type": "string",
+      "minLength": 1
+    },
+
+    "url_full": {
+      "description": "Full URL if available; otherwise reconstructed. Must be sanitized locally before any external use.",
+      "type": "string",
+      "minLength": 1
+    },
+    "url_path": { "type": ["string", "null"] },
+    "url_query": { "type": ["string", "null"] },
+
+    "http_method": { "type": ["string", "null"] },
+    "status_code": { "type": ["integer", "null"], "minimum": 100, "maximum": 599 },
+
+    "action": {
+      "description": "Enforcement action.",
+      "type": "string",
+      "minLength": 1
+    },
+
+    "app_name": { "type": ["string", "null"] },
+    "app_category": { "type": ["string", "null"] },
+
+    "bytes_sent": {
+      "description": "Upload-equivalent bytes (0 allowed).",
+      "type": "integer",
+      "minimum": 0
+    },
+    "bytes_received": {
+      "description": "Download-equivalent bytes (0 allowed).",
+      "type": "integer",
+      "minimum": 0
+    },
+
+    "content_type": { "type": ["string", "null"] },
+    "user_agent": { "type": ["string", "null"] },
+
+    "raw_event_id": { "type": ["string", "null"] },
+
+    "ingest_file": {
+      "description": "Source filename of the ingested log.",
+      "type": "string",
+      "minLength": 1
+    },
+    "ingest_lineage_hash": {
+      "description": "Hash of the canonicalized row for provenance and idempotency.",
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

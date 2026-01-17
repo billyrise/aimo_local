@@ -1,0 +1,100 @@
+# Box Sync Configuration
+# 
+# AIMO uses Box Drive sync for receiving customer log files.
+# This config controls file stabilization and handoff to processing.
+
+# -----------------------------------------------------------------------------
+# Sync Settings
+# -----------------------------------------------------------------------------
+
+# Enable Box sync integration
+enabled: false
+
+# Box Drive local path (where Box syncs files)
+# This should match your Box Drive mount point + folder path
+local_sync_path: "/Users/Shared/Box/AIMO/inbox"
+
+# Fallback if Box not configured (direct file drop)
+fallback_input_path: "./data/input"
+
+# -----------------------------------------------------------------------------
+# Stabilization (Critical for Atomicity)
+# -----------------------------------------------------------------------------
+
+# IMPORTANT: Never process files that are still being synced.
+# A file is considered "stable" when:
+#   1. File size has not changed for N seconds
+#   2. Last modified time has not changed for N seconds
+
+stabilization:
+  # Seconds to wait with no changes before considering file stable
+  wait_seconds: 60
+  
+  # Check interval (how often to poll for changes)
+  poll_interval_seconds: 5
+  
+  # Maximum wait time before giving up (prevents infinite wait on locked files)
+  max_wait_seconds: 600  # 10 minutes
+
+# -----------------------------------------------------------------------------
+# File Handling
+# -----------------------------------------------------------------------------
+
+file_handling:
+  # After processing, move files to archive (not delete)
+  archive_after_processing: true
+  
+  # Archive path (relative to workspace or absolute)
+  archive_path: "./data/archive"
+  
+  # Preserve original directory structure in archive
+  preserve_structure: true
+  
+  # File patterns to process
+  include_patterns:
+    - "*.csv"
+    - "*.json"
+    - "*.log"
+    - "*.txt"
+    - "*.gz"
+    - "*.zip"
+  
+  # File patterns to ignore
+  exclude_patterns:
+    - ".*"           # Hidden files
+    - "*.tmp"        # Temp files
+    - "*.partial"    # Partial downloads
+    - "~$*"          # Office temp files
+    - "Thumbs.db"
+    - ".DS_Store"
+
+# -----------------------------------------------------------------------------
+# Work Directory
+# -----------------------------------------------------------------------------
+
+work:
+  # Base directory for processing (files copied here after stabilization)
+  base_path: "./data/work"
+  
+  # Structure: {base_path}/{run_id}/raw/{original_filename}
+  # This ensures:
+  #   1. Original files in sync folder are never modified
+  #   2. Each run has isolated working files
+  #   3. Re-runs can recover from work directory
+  
+  # Cleanup policy
+  cleanup:
+    # Keep work directories for N days
+    retention_days: 7
+    
+    # Only cleanup successful runs (keep failed for debugging)
+    only_successful: true
+
+# -----------------------------------------------------------------------------
+# Notifications (Future)
+# -----------------------------------------------------------------------------
+
+# notifications:
+#   on_new_file: false
+#   on_processing_complete: false
+#   on_error: false

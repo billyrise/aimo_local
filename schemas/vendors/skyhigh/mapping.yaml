@@ -1,0 +1,58 @@
+# Skyhigh Security (formerly McAfee SWG) Log Mapping
+# Reference: Skyhigh Security Web Gateway Log Format
+# Note: Field names vary by product module and version
+
+vendor: skyhigh
+product: swg
+event_type: web
+
+timestamp:
+  candidates: ["timestamp", "date", "time", "DateTime", "eventTime"]
+  parse:
+    timestamp:
+      type: "iso8601_or_epoch"
+      timezone_default: "UTC"
+    date_time_combo:
+      type: "custom"
+      pattern: "%Y-%m-%d %H:%M:%S"
+      timezone_default: "UTC"
+
+url:
+  full_candidates: ["url", "cs-uri", "request_url", "URL", "destination"]
+  domain_from_url: true
+  host_candidates: ["host", "destination_host", "server"]
+
+bytes:
+  sent_candidates: ["bytes_sent", "upload", "tx", "reqsize", "request_size"]
+  recv_candidates: ["bytes_received", "download", "rx", "respsize", "response_size"]
+
+action:
+  field_candidates: ["action", "verdict", "result", "block_reason"]
+  map:
+    allow: ["allowed", "permit", "pass", "Allow", "ALLOW"]
+    block: ["blocked", "deny", "Block", "BLOCK", "DROP"]
+  default: "unknown"
+
+identity:
+  user_candidates: ["user", "username", "user_id", "client_user"]
+  src_ip_candidates: ["client_ip", "src_ip", "source_ip", "srcip"]
+  dst_ip_candidates: ["server_ip", "dst_ip", "destination_ip", "dstip"]
+
+method:
+  candidates: ["method", "http_method", "request_method"]
+
+status_code:
+  candidates: ["status_code", "http_status", "response_code"]
+
+category:
+  candidates: ["category", "url_category", "web_category"]
+
+app:
+  candidates: ["application", "app_name", "app"]
+
+notes: |
+  Skyhigh SWG has significant variation across:
+  - Product modules (SWG, CASB, etc.)
+  - Export formats (Syslog, CEF, CSV)
+  - Version differences
+  Start with candidate field approach and refine after receiving actual logs.
