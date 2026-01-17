@@ -39,7 +39,7 @@
       "type": "object",
       "description": "Matching criteria (longest match + priority)",
       "additionalProperties": false,
-      "required": ["domain_suffixes"],
+      "required": [],
       "properties": {
         "domain_suffixes": {
           "type": "array",
@@ -60,6 +60,11 @@
           "type": "array",
           "items": {"type": "string"},
           "description": "URL path prefixes to match"
+        },
+        "url_signatures": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Exact URL signatures to match (highest priority)"
         }
       }
     },

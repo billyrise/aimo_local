@@ -1,0 +1,213 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schemas/report_summary.schema.json",
+  "title": "AIMO Analysis Report Summary",
+  "description": "Schema for audit-ready analysis report with all required metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run_id",
+    "run_key",
+    "started_at",
+    "thresholds_used",
+    "counts",
+    "sample",
+    "rule_coverage",
+    "llm_coverage"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "description": "Short run identifier"
+    },
+    "run_key": {
+      "type": "string",
+      "description": "Deterministic run key for idempotency"
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Run start time (ISO 8601)"
+    },
+    "finished_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Run finish time (ISO 8601)"
+    },
+    "input_file": {
+      "type": "string",
+      "description": "Path to input file"
+    },
+    "vendor": {
+      "type": "string",
+      "description": "Vendor name (e.g., paloalto)"
+    },
+    "thresholds_used": {
+      "type": "object",
+      "description": "All thresholds used for A/B/C detection",
+      "required": ["A_min_bytes", "B_burst_count", "B_burst_window_seconds", "B_cumulative_bytes", "C_sample_rate"],
+      "properties": {
+        "A_min_bytes": {
+          "type": "integer",
+          "description": "A signal threshold: minimum bytes_sent"
+        },
+        "B_burst_count": {
+          "type": "integer",
+          "description": "B signal threshold: minimum events in burst window"
+        },
+        "B_burst_window_seconds": {
+          "type": "integer",
+          "description": "B signal threshold: burst window size in seconds"
+        },
+        "B_cumulative_bytes": {
+          "type": "integer",
+          "description": "B signal threshold: minimum cumulative bytes per UTC day"
+        },
+        "C_sample_rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "C signal threshold: sample rate (0.0-1.0)"
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "description": "All counts for audit",
+      "required": [
+        "total_events",
+        "total_signatures",
+        "abc_count_a",
+        "abc_count_b",
+        "abc_count_c",
+        "burst_hit",
+        "cumulative_hit"
+      ],
+      "properties": {
+        "total_events": {
+          "type": "integer",
+          "description": "Total events processed"
+        },
+        "total_signatures": {
+          "type": "integer",
+          "description": "Unique URL signatures"
+        },
+        "unique_users": {
+          "type": "integer",
+          "description": "Unique users"
+        },
+        "unique_domains": {
+          "type": "integer",
+          "description": "Unique domains"
+        },
+        "abc_count_a": {
+          "type": "integer",
+          "description": "Number of A signals detected"
+        },
+        "abc_count_b": {
+          "type": "integer",
+          "description": "Number of B signals detected"
+        },
+        "abc_count_c": {
+          "type": "integer",
+          "description": "Number of C signals detected"
+        },
+        "burst_hit": {
+          "type": "integer",
+          "description": "Number of signatures that hit B burst threshold"
+        },
+        "cumulative_hit": {
+          "type": "integer",
+          "description": "Number of signatures that hit B cumulative threshold"
+        }
+      }
+    },
+    "sample": {
+      "type": "object",
+      "description": "Sampling metadata for reproducibility",
+      "required": ["sample_rate", "sample_method", "seed"],
+      "properties": {
+        "sample_rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "C sample rate used"
+        },
+        "sample_method": {
+          "type": "string",
+          "description": "Sampling method (e.g., 'deterministic_hash')"
+        },
+        "seed": {
+          "type": "string",
+          "description": "Seed used for deterministic sampling (run_id)"
+        }
+      }
+    },
+    "exclusions": {
+      "type": "object",
+      "description": "Exclusion criteria applied (currently empty, reserved for future)",
+      "properties": {
+        "action_filter": {
+          "type": "string",
+          "description": "Action filter applied (e.g., 'allow')"
+        }
+      }
+    },
+    "rule_coverage": {
+      "type": "object",
+      "description": "Rule-based classification coverage",
+      "required": ["rule_hit", "unknown_count"],
+      "properties": {
+        "rule_hit": {
+          "type": "integer",
+          "description": "Number of signatures classified by rules"
+        },
+        "unknown_count": {
+          "type": "integer",
+          "description": "Number of signatures not matched by rules"
+        }
+      }
+    },
+    "llm_coverage": {
+      "type": "object",
+      "description": "LLM analysis coverage",
+      "required": [
+        "llm_analyzed_count",
+        "needs_review_count",
+        "cache_hit_rate"
+      ],
+      "properties": {
+        "llm_analyzed_count": {
+          "type": "integer",
+          "description": "Number of signatures analyzed by LLM"
+        },
+        "needs_review_count": {
+          "type": "integer",
+          "description": "Number of signatures marked as needs_review"
+        },
+        "cache_hit_rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Cache hit rate (0.0-1.0)"
+        },
+        "skipped_count": {
+          "type": "integer",
+          "description": "Number of signatures skipped (budget, etc.)"
+        }
+      }
+    },
+    "signature_version": {
+      "type": "string",
+      "description": "Signature version used"
+    },
+    "rule_version": {
+      "type": "string",
+      "description": "Rule version used"
+    },
+    "prompt_version": {
+      "type": "string",
+      "description": "Prompt version used"
+    }
+  }
+}

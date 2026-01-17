@@ -5,7 +5,7 @@ This plan is the canonical build order for Cursor and human reviewers.
 ## Phase 0: Project bootstrap
 **Deliverables**
 - `src/` skeleton (orchestrator, db client, config loader)
-- `.env.example`
+- `.env.local` (created from `.env` and `.env.example`)
 - logging setup (JSONL)
 
 **Acceptance**

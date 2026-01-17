@@ -1,5 +1,6 @@
 # AIMO Analysis Engine - Python Dependencies
 # 
+# Python 3.11+ required
 # Install: pip install -r requirements.txt
 # For development: pip install -r requirements.txt -r requirements-dev.txt
 
@@ -33,6 +34,11 @@ jsonschema==4.23.0
 
 # HTTP Client (async support)
 httpx==0.28.1
+
+# HTTP Client (sync, for LLM client)
+# Note: urllib3 1.x for LibreSSL compatibility (urllib3 2.x requires OpenSSL 1.1.1+)
+requests==2.32.3
+urllib3>=1.26.0,<2.0.0
 
 # Retry with Backoff
 tenacity==9.0.0
