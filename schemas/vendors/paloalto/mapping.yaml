@@ -1,0 +1,52 @@
+# Palo Alto Networks PAN-OS Traffic Log Mapping
+# Reference: PAN-OS Traffic Log Field Definitions
+# https://docs.paloaltonetworks.com/pan-os/11-1/pan-os-admin/monitoring/use-syslog-for-monitoring/syslog-field-descriptions/traffic-log-fields
+
+vendor: paloalto
+product: panos
+event_type: firewall
+
+timestamp:
+  candidates: ["start", "receive_time", "generated_time"]
+  parse:
+    start:
+      type: "epoch_or_iso8601"
+    receive_time:
+      type: "iso8601_or_local"
+      timezone_default: "UTC"
+    generated_time:
+      type: "iso8601_or_local"
+      timezone_default: "UTC"
+
+bytes:
+  sent_candidates: ["bytes_sent"]
+  recv_candidates: ["bytes_received"]
+
+action:
+  field_candidates: ["action"]
+  map:
+    allow: ["allow", "alert", "continue"]
+    block: ["deny", "drop", "reset-client", "reset-server", "reset-both", "block-url"]
+  default: "unknown"
+
+url:
+  full_candidates: ["url", "request_url", "http_url"]
+  domain_from_url: true
+
+identity:
+  user_candidates: ["srcuser", "user", "username"]
+  src_ip_candidates: ["src", "src_ip"]
+  dst_ip_candidates: ["dst", "dst_ip"]
+
+method:
+  candidates: ["http_method", "method"]
+
+app:
+  candidates: ["app", "application"]
+
+category:
+  candidates: ["url_category", "category"]
+
+notes: |
+  PAN-OS Traffic log fields vary by version and configuration.
+  This mapping covers common field names across PAN-OS 9.x - 11.x.

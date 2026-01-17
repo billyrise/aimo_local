@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schemas/canonical_signature.schema.json",
+  "title": "AIMO Canonical Signature",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "url_signature",
+    "signature_version",
+    "norm_host",
+    "norm_path_template",
+    "path_depth",
+    "param_count",
+    "method_group",
+    "bytes_bucket"
+  ],
+  "properties": {
+    "url_signature": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "sha256 hex digest of deterministic signature input"
+    },
+    "signature_version": { "type": "string", "minLength": 1 },
+
+    "norm_host": { "type": "string", "minLength": 1 },
+    "norm_path_template": { "type": "string", "minLength": 1 },
+
+    "path_depth": { "type": "integer", "minimum": 0 },
+    "param_count": { "type": "integer", "minimum": 0 },
+
+    "method_group": {
+      "type": "string",
+      "enum": ["GET", "WRITE", "OTHER"]
+    },
+
+    "bytes_bucket": {
+      "type": "string",
+      "description": "Bucket label defined in config/bytes_buckets.yml (T/L/M/H/X, where T=tiny, not to be confused with candidate C)",
+      "enum": ["T", "L", "M", "H", "X"]
+    },
+
+    "has_auth_token_like": { "type": ["boolean", "null"] },
+    "candidate_flags": { "type": ["string", "null"] }
+  }
+}

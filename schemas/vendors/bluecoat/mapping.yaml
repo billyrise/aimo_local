@@ -1,0 +1,59 @@
+# Blue Coat / Symantec ProxySG Log Mapping
+# Reference: ProxySG Access Log Format (W3C Extended)
+# Note: Most deployments use W3C-compatible format
+
+vendor: bluecoat
+product: proxysg
+event_type: proxy
+
+timestamp:
+  candidates: ["date", "time", "timestamp", "x-timestamp"]
+  parse:
+    date_time_combo:
+      type: "w3c_date_time"
+      timezone_default: "UTC"
+    timestamp:
+      type: "epoch_or_iso8601"
+      timezone_default: "UTC"
+
+url:
+  full_candidates: ["cs-uri", "cs-uri-stem", "cs_uri", "url"]
+  domain_from_url: true
+  host_candidates: ["cs-host", "s-sitename"]
+
+bytes:
+  # W3C naming: cs = client-to-server, sc = server-to-client
+  sent_candidates: ["cs-bytes", "bytes_sent", "upload", "sc-bytes"]
+  recv_candidates: ["sc-bytes", "bytes_received", "download", "rs-bytes"]
+
+action:
+  field_candidates: ["x-exception-id", "action", "s-action", "sc-filter-result"]
+  map:
+    # "-" typically means allowed (no exception)
+    allow: ["-", "Allowed", "allow", "OBSERVED", "PROXIED"]
+    block: ["blocked", "deny", "exception", "policy_denied", "DENIED", "TCP_DENIED"]
+  default: "unknown"
+
+identity:
+  user_candidates: ["cs-username", "cs-auth-user", "user", "cs-userdn"]
+  src_ip_candidates: ["c-ip", "cs-ip", "client_ip"]
+  dst_ip_candidates: ["s-ip", "rs-ip", "server_ip"]
+
+method:
+  candidates: ["cs-method", "method"]
+
+status_code:
+  candidates: ["sc-status", "status", "rs-status"]
+
+category:
+  candidates: ["cs-categories", "x-category", "category"]
+
+user_agent:
+  candidates: ["cs(User-Agent)", "cs-user-agent", "user_agent"]
+
+notes: |
+  ProxySG logs typically follow W3C Extended Log Format.
+  cs-* = client-to-server (request)
+  sc-* = server-to-client (response from proxy)
+  rs-* = remote server response
+  Reference: Secureworks Taegis Integration Documentation

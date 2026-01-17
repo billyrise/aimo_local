@@ -1,0 +1,52 @@
+# Microsoft Defender for Cloud Apps (MDCA) Log Mapping
+# Reference: MDCA Activity Log Schema / SIEM Export Format
+# Note: Field names vary by export method (SIEM agent, API, manual export)
+
+vendor: mdca
+product: defender_for_cloud_apps
+event_type: cloudapp
+
+timestamp:
+  candidates: ["Timestamp", "timestamp", "EventTime", "event_time", "createdDateTime"]
+  parse:
+    default:
+      type: "iso8601_or_epoch"
+      timezone_default: "UTC"
+
+action:
+  field_candidates: ["ActionType", "action", "Activity", "eventType"]
+  map:
+    allow: ["Allowed", "Success", "Succeeded", "success", "allow"]
+    block: ["Blocked", "Denied", "Failed", "blocked", "deny"]
+  default: "unknown"
+
+url:
+  full_candidates: ["Url", "ObjectId", "Resource", "targetResource", "url"]
+  domain_from_url: true
+
+identity:
+  user_candidates: ["User", "UserId", "Account", "userPrincipalName", "user"]
+  src_ip_candidates: ["IpAddress", "IP", "SourceIP", "clientIP", "ip_address"]
+
+app:
+  candidates: ["AppName", "appDisplayName", "application", "app"]
+
+category:
+  candidates: ["Category", "appCategory", "category"]
+
+device:
+  candidates: ["DeviceName", "device", "machineName"]
+
+# MDCA-specific fields
+cloud_app_id:
+  candidates: ["appId", "CloudAppId"]
+
+risk_score:
+  candidates: ["riskScore", "AppRiskScore"]
+
+notes: |
+  MDCA exports vary significantly based on:
+  - Export method (SIEM agent vs API vs manual CSV)
+  - Tenant configuration
+  - Activity type (access, admin, etc.)
+  Use candidate field approach to absorb variations.

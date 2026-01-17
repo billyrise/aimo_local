@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Job Label (unique identifier) -->
+    <key>Label</key>
+    <string>jp.riseby.aimo</string>
+    
+    <!-- Description -->
+    <key>Comment</key>
+    <string>AIMO Analysis Engine - Daily batch processing</string>
+    
+    <!-- Program to run -->
+    <key>ProgramArguments</key>
+    <array>
+        <!-- Use full path to Python interpreter -->
+        <string>/usr/local/bin/python3</string>
+        <!-- Or use pyenv/venv: /Users/username/.pyenv/versions/3.12.0/bin/python -->
+        <string>/path/to/aimo/src/main.py</string>
+        <string>run</string>
+        <string>--config</string>
+        <string>/path/to/aimo/config/production.yaml</string>
+    </array>
+    
+    <!-- Working Directory -->
+    <key>WorkingDirectory</key>
+    <string>/path/to/aimo</string>
+    
+    <!-- Environment Variables -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin</string>
+        <key>AIMO_ENV</key>
+        <string>production</string>
+    </dict>
+    
+    <!-- Schedule: Run daily at 2:00 AM -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>2</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+    
+    <!-- Alternative: Run every 15 minutes (for testing) -->
+    <!-- 
+    <key>StartInterval</key>
+    <integer>900</integer>
+    -->
+    
+    <!-- Run at load (startup) -->
+    <key>RunAtLoad</key>
+    <false/>
+    
+    <!-- Logging -->
+    <key>StandardOutPath</key>
+    <string>/path/to/aimo/logs/launchd_stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/path/to/aimo/logs/launchd_stderr.log</string>
+    
+    <!-- Process options -->
+    <key>Nice</key>
+    <integer>10</integer>
+    
+    <!-- Prevent overlapping runs -->
+    <key>AbandonProcessGroup</key>
+    <false/>
+    
+    <!-- Restart on crash (with limits) -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+    </dict>
+    
+    <!-- Throttle restarts -->
+    <key>ThrottleInterval</key>
+    <integer>300</integer>
+</dict>
+</plist>
+
+<!--
+Installation:
+1. Copy this file to ~/Library/LaunchAgents/ (for user) or /Library/LaunchDaemons/ (for system)
+2. Update all /path/to/aimo references
+3. Load: launchctl load ~/Library/LaunchAgents/jp.riseby.aimo.plist
+4. Start: launchctl start jp.riseby.aimo
+5. Check: launchctl list | grep aimo
+
+Uninstall:
+1. launchctl stop jp.riseby.aimo
+2. launchctl unload ~/Library/LaunchAgents/jp.riseby.aimo.plist
+3. rm ~/Library/LaunchAgents/jp.riseby.aimo.plist
+
+Debugging:
+- View logs: tail -f /path/to/aimo/logs/launchd_*.log
+- Check status: launchctl list jp.riseby.aimo
+- Manual run: launchctl start jp.riseby.aimo
+-->

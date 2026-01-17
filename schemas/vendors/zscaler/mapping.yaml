@@ -1,0 +1,54 @@
+# Zscaler NSS Web Log Mapping
+# Reference: Zscaler NSS Feed Output Format / Splunk Deployment Guide
+# Format: date time user url action totalsize reqsize respsize ...
+
+vendor: zscaler
+product: nss
+event_type: web
+
+timestamp:
+  candidates: ["datetime", "date", "time"]
+  parse:
+    datetime:
+      type: "iso8601_or_epoch"
+      timezone_default: "UTC"
+    date_time_combo:
+      type: "custom"
+      # Zscaler NSS web log timestamp format (e.g., "2024-01-15 14:30:00")
+      pattern: "%Y-%m-%d %H:%M:%S"
+      timezone_default: "UTC"
+
+bytes:
+  # reqsize = upload, respsize = download, totalsize = sum
+  sent_candidates: ["reqsize", "bytes_sent", "sent_bytes", "upload", "tx"]
+  recv_candidates: ["respsize", "bytes_received", "recv_bytes", "download", "rx"]
+  total_candidates: ["totalsize"]
+
+action:
+  field_candidates: ["action"]
+  map:
+    allow: ["allowed", "allow", "permitted", "pass", "Allowed"]
+    block: ["blocked", "block", "denied", "deny", "Blocked"]
+  default: "unknown"
+
+url:
+  full_candidates: ["url"]
+  domain_from_url: true
+
+identity:
+  user_candidates: ["user", "login", "username"]
+  src_ip_candidates: ["cip", "srcip", "clientip", "client_ip"]
+
+method:
+  candidates: ["requestmethod", "method"]
+
+app:
+  candidates: ["appname", "application"]
+
+category:
+  candidates: ["urlcategory", "category", "urlclass"]
+
+notes: |
+  Zscaler NSS Web log format varies based on NSS feed configuration.
+  Some deployments use headerless CSV; AIMO standardizes with header injection.
+  Reference: Zscaler Help - NSS Feed Output Format
