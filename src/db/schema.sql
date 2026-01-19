@@ -100,7 +100,7 @@ CREATE TABLE IF NOT EXISTS analysis_cache (
     model VARCHAR,                               -- LLM model used (if applicable)
     
     -- Status tracking
-    status VARCHAR DEFAULT 'active',             -- active/needs_review/skipped
+    status VARCHAR DEFAULT 'active',             -- active/needs_review/skipped/failed_permanent
     is_human_verified BOOLEAN DEFAULT FALSE,     -- If true, never overwrite
     
     -- Error tracking

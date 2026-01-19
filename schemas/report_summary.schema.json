@@ -194,6 +194,48 @@
         "skipped_count": {
           "type": "integer",
           "description": "Number of signatures skipped (budget, etc.)"
+        },
+        "llm_provider": {
+          "type": "string",
+          "description": "LLM provider used (e.g., gemini, openai)"
+        },
+        "llm_model": {
+          "type": "string",
+          "description": "LLM model used (e.g., gemini-2.0-flash)"
+        },
+        "structured_output": {
+          "type": "boolean",
+          "description": "Whether structured outputs (JSON Schema) were used"
+        },
+        "schema_sanitized": {
+          "type": "boolean",
+          "description": "Whether JSON Schema was sanitized for provider compatibility"
+        },
+        "retry_summary": {
+          "type": "object",
+          "description": "Retry metadata for audit trail",
+          "properties": {
+            "attempts": {
+              "type": "integer",
+              "description": "Maximum number of retry attempts across all batches"
+            },
+            "backoff_ms_total": {
+              "type": "integer",
+              "description": "Total backoff delay in milliseconds"
+            },
+            "last_error_code": {
+              "type": ["string", "null"],
+              "description": "Last error code encountered (429, 401/403, timeout, server_error, etc.)"
+            },
+            "rate_limit_events": {
+              "type": "integer",
+              "description": "Number of rate limit (429) events encountered"
+            }
+          }
+        },
+        "rate_limit_events": {
+          "type": "integer",
+          "description": "Number of rate limit (429) events encountered (duplicate of retry_summary.rate_limit_events for convenience)"
         }
       }
     },

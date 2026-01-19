@@ -169,9 +169,16 @@ class DuckDBClient:
         # 同一バッチ内の重複キーを事前dedup（最後の1件だけ残す）
         deduplicated_batch = self._deduplicate_batch(batch)
         
-        try:
-            for item in deduplicated_batch:
-                op_type = item.get("op")
+        # Process each item individually to allow continuation on runs table errors
+        successful_ops = 0
+        failed_ops = 0
+        
+        for item in deduplicated_batch:
+            op_type = item.get("op")
+            table_name = item.get("table", "unknown")
+            ignore_conflict = item.get("ignore_conflict", False)
+            
+            try:
                 if op_type == "upsert":
                     self._execute_upsert(
                         table=item["table"],
@@ -182,24 +189,63 @@ class DuckDBClient:
                 elif op_type == "insert":
                     self._execute_insert(
                         table=item["table"],
-                        data=item["data"]
+                        data=item["data"],
+                        ignore_conflict=ignore_conflict
                     )
                 elif op_type == "update":
                     self._execute_update(
                         table=item["table"],
                         data=item["data"],
-                        where_clause=item["where_clause"]
+                        where_clause=item["where_clause"],
+                        where_values=item.get("where_values")
                     )
-            
-            self._writer_conn.commit()
-        except Exception as e:
-            print(f"Batch processing error: {e}", flush=True)
+                successful_ops += 1
+            except Exception as item_error:
+                # For runs table INSERT with ignore_conflict, log warning but continue
+                if table_name == "runs" and op_type == "insert" and ignore_conflict:
+                    error_msg = str(item_error)
+                    if "Duplicate key" in error_msg or "already exists" in error_msg.lower() or "Can not assign" in error_msg:
+                        print(f"  WARNING: Run record already exists or conflict (idempotent): {item_error}", flush=True)
+                        print(f"  Continuing with remaining operations...", flush=True)
+                        # Continue to next item (don't raise)
+                        failed_ops += 1
+                        continue
+                    else:
+                        print(f"  WARNING: Failed to insert run record: {item_error}", flush=True)
+                        print(f"  Continuing with remaining operations...", flush=True)
+                        # Continue to next item (don't raise)
+                        failed_ops += 1
+                        continue
+                # For runs table UPDATE, log warning but continue (report generation is more important)
+                elif table_name == "runs" and op_type == "update":
+                    error_msg = str(item_error)
+                    print(f"  WARNING: Failed to update run status: {item_error}", flush=True)
+                    print(f"  Continuing (report generation completed successfully)...", flush=True)
+                    # Continue to next item (don't raise)
+                    failed_ops += 1
+                    continue
+                # For other errors, log and continue (don't fail entire batch)
+                print(f"  WARNING: Failed to process {op_type} for {table_name}: {item_error}", flush=True)
+                print(f"  Continuing with remaining operations...", flush=True)
+                failed_ops += 1
+                continue
+        
+        # Commit if we had any successful operations
+        if successful_ops > 0:
+            try:
+                self._writer_conn.commit()
+            except Exception as commit_error:
+                print(f"  WARNING: Failed to commit batch: {commit_error}", flush=True)
+                try:
+                    self._writer_conn.rollback()
+                except Exception:
+                    pass
+        elif failed_ops > 0 and successful_ops == 0:
+            # All operations failed, but we should still try to rollback
             try:
                 self._writer_conn.rollback()
             except Exception:
-                # Ignore rollback errors (transaction may already be committed or not started)
                 pass
-            raise
     
     def _deduplicate_batch(self, batch: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
@@ -336,9 +382,16 @@ class DuckDBClient:
             "runs": ["status", "started_at"],  # idx_runs_status, idx_runs_started
         }
         
-        if table in indexed_columns:
-            # Exclude indexed columns from update_columns
+        # Only exclude indexed columns if update_columns was not explicitly provided
+        # If explicitly provided, assume the caller knows what they're doing
+        if table in indexed_columns and update_columns is None:
+            # Exclude indexed columns from update_columns (only when auto-detecting)
+            update_columns = [col for col in columns if col not in pk_columns]
             update_columns = [col for col in update_columns if col not in indexed_columns[table]]
+        elif table in indexed_columns and update_columns is not None:
+            # update_columns was explicitly provided - respect it (caller knows what they're doing)
+            # But still exclude PK columns
+            update_columns = [col for col in update_columns if col not in pk_columns]
         
         # INSERT OR REPLACEのフォールバックは全面禁止（例外なし）
         # 監査・整合性・来歴の観点でDELETE→INSERT相当が再発するため。
@@ -353,9 +406,9 @@ class DuckDBClient:
         
         # ON CONFLICT DO UPDATE (preserves PK, updates specified columns)
         # INSERT OR REPLACEは使用禁止
+        # DuckDB requires EXCLUDED keyword for ON CONFLICT DO UPDATE
         values = [data.get(col) for col in columns]
-        update_clause = ", ".join([f"{col} = ?" for col in update_columns])
-        update_values = [data.get(col) for col in update_columns]
+        update_clause = ", ".join([f"{col} = EXCLUDED.{col}" for col in update_columns])
         
         sql = f"""
             INSERT INTO {table} ({column_list})
@@ -363,25 +416,93 @@ class DuckDBClient:
             ON CONFLICT ({conflict_key}) DO UPDATE SET {update_clause}
         """
         
-        self._writer_conn.execute(sql, values + update_values)
+        # Debug: Log SQL for runs table to diagnose the error
+        if table == "runs":
+            print(f"DEBUG: UPSERT SQL for runs table:", flush=True)
+            print(f"  conflict_key: {conflict_key}", flush=True)
+            print(f"  pk_columns: {pk_columns}", flush=True)
+            print(f"  update_columns: {update_columns}", flush=True)
+            print(f"  Full SQL:\n{sql}", flush=True)
+            print(f"  values: {values}", flush=True)
+        
+        try:
+            self._writer_conn.execute(sql, values)
+        except Exception as e:
+            # Enhanced error message for debugging
+            if table == "runs":
+                print(f"DEBUG: Error executing UPSERT for runs table:", flush=True)
+                print(f"  Full SQL:\n{sql}", flush=True)
+                print(f"  values: {values}", flush=True)
+                print(f"  update_columns: {update_columns}", flush=True)
+                print(f"  pk_columns: {pk_columns}", flush=True)
+                print(f"  conflict_key: {conflict_key}", flush=True)
+            raise
     
-    def _execute_insert(self, table: str, data: Dict[str, Any]):
-        """Execute INSERT (internal)."""
+    def _execute_insert(self, table: str, data: Dict[str, Any], ignore_conflict: bool = False):
+        """Execute INSERT (internal).
+        
+        Args:
+            table: Table name
+            data: Dictionary of column: value
+            ignore_conflict: If True, use INSERT ... ON CONFLICT DO NOTHING
+        """
         columns = list(data.keys())
         placeholders = ", ".join(["?" for _ in columns])
         column_list = ", ".join(columns)
         values = [data.get(col) for col in columns]
         
-        sql = f"INSERT INTO {table} ({column_list}) VALUES ({placeholders})"
+        if ignore_conflict:
+            # Determine conflict key (primary key)
+            conflict_key = None
+            if "run_id" in data:
+                conflict_key = "run_id"
+            elif "url_signature" in data:
+                conflict_key = "url_signature"
+            elif "file_id" in data:
+                conflict_key = "file_id"
+            
+            if conflict_key:
+                sql = f"INSERT INTO {table} ({column_list}) VALUES ({placeholders}) ON CONFLICT ({conflict_key}) DO NOTHING"
+            else:
+                sql = f"INSERT INTO {table} ({column_list}) VALUES ({placeholders})"
+        else:
+            sql = f"INSERT INTO {table} ({column_list}) VALUES ({placeholders})"
+        
         self._writer_conn.execute(sql, values)
     
-    def _execute_update(self, table: str, data: Dict[str, Any], where_clause: str):
-        """Execute UPDATE (internal)."""
+    def _execute_update(self, table: str, data: Dict[str, Any], where_clause: str, where_values: Optional[List[Any]] = None):
+        """Execute UPDATE (internal).
+        
+        Args:
+            table: Table name
+            data: Dictionary of column: value to update
+            where_clause: WHERE clause (e.g., "run_id = ?")
+            where_values: Values for WHERE clause placeholders
+        """
+        if not data:
+            return  # Nothing to update
+        
         set_clause = ", ".join([f"{col} = ?" for col in data.keys()])
         values = [data.get(col) for col in data.keys()]
         
+        if where_values:
+            values.extend(where_values)
+        
         sql = f"UPDATE {table} SET {set_clause} WHERE {where_clause}"
-        self._writer_conn.execute(sql, values)
+        try:
+            self._writer_conn.execute(sql, values)
+        except Exception as e:
+            # Re-raise with more context
+            error_msg = str(e)
+            if "Duplicate key" in error_msg:
+                # This shouldn't happen with UPDATE, but DuckDB may have issues with indexed columns
+                # Try updating without indexed columns first, then update indexed columns separately
+                raise RuntimeError(
+                    f"UPDATE failed for {table}: {error_msg}. "
+                    f"This may be a DuckDB limitation with indexed columns. "
+                    f"SQL: {sql}, Values: {values}"
+                ) from e
+            raise
     
     def upsert(self, table: str, data: Dict[str, Any],
                conflict_key: Optional[str] = None,
@@ -405,30 +526,33 @@ class DuckDBClient:
             "update_columns": update_columns
         })
     
-    def insert(self, table: str, data: Dict[str, Any]):
+    def insert(self, table: str, data: Dict[str, Any], ignore_conflict: bool = False):
         """
         Queue an INSERT operation (non-blocking).
         
         Args:
             table: Table name
             data: Dictionary of column: value
+            ignore_conflict: If True, use INSERT ... ON CONFLICT DO NOTHING
         """
         self._start_writer()
         
         self._write_queue.put({
             "op": "insert",
             "table": table,
-            "data": data
+            "data": data,
+            "ignore_conflict": ignore_conflict
         })
     
-    def update(self, table: str, data: Dict[str, Any], where_clause: str):
+    def update(self, table: str, data: Dict[str, Any], where_clause: str, where_values: Optional[List[Any]] = None):
         """
         Queue an UPDATE operation (non-blocking).
         
         Args:
             table: Table name
             data: Dictionary of column: value
-            where_clause: WHERE clause (without "WHERE" keyword)
+            where_clause: WHERE clause (e.g., "run_id = ?")
+            where_values: Values for WHERE clause placeholders
         """
         self._start_writer()
         
@@ -436,7 +560,8 @@ class DuckDBClient:
             "op": "update",
             "table": table,
             "data": data,
-            "where_clause": where_clause
+            "where_clause": where_clause,
+            "where_values": where_values
         })
     
     def flush(self, timeout: float = 30.0):

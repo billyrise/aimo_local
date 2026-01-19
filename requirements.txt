@@ -43,6 +43,10 @@ urllib3>=1.26.0,<2.0.0
 # Retry with Backoff
 tenacity==9.0.0
 
+# Google GenAI SDK (for Gemini)
+# Note: 1.48.0+ requires Python 3.10+, using 1.47.0 for Python 3.9 compatibility
+google-genai>=1.47.0,<1.48.0
+
 # =============================================================================
 # File Locking
 # =============================================================================
