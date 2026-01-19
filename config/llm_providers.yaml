@@ -2,7 +2,7 @@
 # NOTE: Pricing is subject to change. Always verify with official documentation.
 # Update pricing values before production use.
 
-default_provider: openai
+default_provider: gemini
 
 providers:
   openai:
@@ -53,6 +53,19 @@ providers:
       source: "Anthropic Pricing"
       input_per_1m_tokens: 3.00
       output_per_1m_tokens: 15.00
+
+  gemini:
+    # Google Gemini REST API
+    auth_env: "GEMINI_API_KEY"  # Falls back to GOOGLE_API_KEY if GEMINI_API_KEY not set
+    model: "gemini-2.0-flash"
+    structured_output: true  # Uses response_mime_type="application/json" + response_json_schema
+    timeout_seconds: 30
+    max_retries: 2
+    pricing:
+      currency: "USD"
+      source: "Google Gemini Pricing (Standard tier)"
+      input_per_1m_tokens_usd: 0.30    # Gemini 2.5 Flash input
+      output_per_1m_tokens_usd: 2.50   # Gemini 2.5 Flash output
 
 # Budget control settings
 budget:

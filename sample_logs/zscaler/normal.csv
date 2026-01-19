@@ -1,0 +1,6 @@
+date,time,user,srcip,dstip,url,action,bytes_sent,bytes_received,http_method,status_code
+2024-01-17,10:00:00,user001,192.168.1.100,172.217.164.110,https://www.google.com/search?q=test,ALLOW,1024,2048,GET,200
+2024-01-17,10:01:00,user002,192.168.1.101,93.184.216.34,https://www.example.com/api/users/12345,ALLOW,2048,4096,POST,201
+2024-01-17,10:02:00,user001,192.168.1.100,13.107.42.14,https://www.openai.com/v1/chat/completions,ALLOW,4096,8192,POST,200
+2024-01-17,10:03:00,user003,192.168.1.102,140.82.121.3,https://www.github.com/repos/user/repo,ALLOW,512,1024,GET,200
+2024-01-17,10:04:00,user002,192.168.1.101,172.217.164.110,https://www.google.com/search?q=python,ALLOW,1536,3072,GET,200
