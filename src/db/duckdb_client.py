@@ -335,9 +335,33 @@ class DuckDBClient:
             data: Dictionary of column: value
             conflict_key: Primary key column name (required)
             update_columns: Columns to update on conflict (if None, updates all non-PK columns)
+        
+        Note:
+            For analysis_cache table, if is_human_verified=true exists, skip update
+            (is_human_verified=true の行は上書き禁止)
         """
         if not self._writer_conn:
             raise RuntimeError("Writer connection not initialized")
+        
+        # Check is_human_verified for analysis_cache table (spec 9.4)
+        if table == "analysis_cache":
+            # Determine conflict key (primary key)
+            if not conflict_key:
+                if "url_signature" in data:
+                    conflict_key = "url_signature"
+                else:
+                    raise ValueError(f"conflict_key must be specified for table {table}")
+            
+            url_sig = data.get(conflict_key)
+            if url_sig:
+                # Check if existing record has is_human_verified=true
+                check_query = f"SELECT is_human_verified FROM {table} WHERE {conflict_key} = ?"
+                existing = self._writer_conn.execute(check_query, [url_sig]).fetchone()
+                
+                if existing and existing[0] is True:
+                    # Skip update if is_human_verified=true (人手確定を最優先)
+                    print(f"  WARNING: Skipping UPSERT for {url_sig} (is_human_verified=true)", flush=True)
+                    return  # Skip this UPSERT operation
         
         # Determine conflict key (primary key)
         if not conflict_key:

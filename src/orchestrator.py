@@ -57,7 +57,10 @@ class Orchestrator:
                  work_base_dir: Path,
                  signature_version: Optional[str] = None,
                  rule_version: str = "1",
-                 prompt_version: str = "1"):
+                 prompt_version: str = "1",
+                 taxonomy_version: str = "1.0",
+                 evidence_pack_version: str = "1.0",
+                 engine_spec_version: str = "1.4"):
         """
         Initialize orchestrator.
         
@@ -67,6 +70,9 @@ class Orchestrator:
             signature_version: Signature version (default: from config)
             rule_version: Rule version
             prompt_version: Prompt version
+            taxonomy_version: Taxonomy version (for Taxonomyセット)
+            evidence_pack_version: Evidence Pack version
+            engine_spec_version: Engine spec version (v1.4)
         """
         self.db_client = db_client
         self.work_base_dir = Path(work_base_dir)
@@ -80,6 +86,9 @@ class Orchestrator:
         self.signature_version = signature_version
         self.rule_version = rule_version
         self.prompt_version = prompt_version
+        self.taxonomy_version = taxonomy_version
+        self.evidence_pack_version = evidence_pack_version
+        self.engine_spec_version = engine_spec_version
         
         self.current_run: Optional[RunContext] = None
     
@@ -146,7 +155,10 @@ class Orchestrator:
             f"{target_range}|"
             f"{self.signature_version}|"
             f"{self.rule_version}|"
-            f"{self.prompt_version}"
+            f"{self.prompt_version}|"
+            f"{self.taxonomy_version}|"
+            f"{self.evidence_pack_version}|"
+            f"{self.engine_spec_version}"
         )
         
         run_key = hashlib.sha256(run_key_input.encode('utf-8')).hexdigest()
@@ -242,6 +254,7 @@ class Orchestrator:
                 last_completed_stage=last_stage,
                 status=status
             )
+            # Note: Taxonomy versions are stored in DB, not in RunContext
         else:
             # New run: create context and insert into DB
             work_dir = self.work_base_dir / run_id
@@ -272,6 +285,9 @@ class Orchestrator:
                 "signature_version": self.signature_version,
                 "rule_version": self.rule_version,
                 "prompt_version": self.prompt_version,
+                "taxonomy_version": self.taxonomy_version,
+                "evidence_pack_version": self.evidence_pack_version,
+                "engine_spec_version": self.engine_spec_version,
                 "input_manifest_hash": input_manifest_hash,
                 "target_range_start": target_range_start,
                 "target_range_end": target_range_end

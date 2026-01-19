@@ -44,9 +44,15 @@ SERVICE_ANALYSIS_USER = """Analyze the following URL signatures and classify eac
 ## Output Format
 Return a JSON array with one object per input signature. Example:
 [
-  {{"service_name": "ChatGPT / OpenAI", "usage_type": "genai", "risk_level": "high", "category": "GenAI", "confidence": 0.95, "rationale_short": "OpenAI's ChatGPT service, primary Shadow AI detection target"}},
-  {{"service_name": "Unknown", "usage_type": "unknown", "risk_level": "medium", "category": "Unknown", "confidence": 0.3, "rationale_short": "Cannot identify service from domain pattern"}}
+  {{"service_name": "ChatGPT / OpenAI", "usage_type": "genai", "risk_level": "high", "category": "GenAI", "confidence": 0.95, "rationale_short": "OpenAI's ChatGPT service, primary Shadow AI detection target", "fs_uc_code": "FS-UC-001", "dt_code": "DT-001", "ch_code": "CH-001", "im_code": "IM-001", "rs_code": "RS-001", "ob_code": "OB-001", "ev_code": "EV-001", "taxonomy_version": "1.0"}},
+  {{"service_name": "Unknown", "usage_type": "unknown", "risk_level": "medium", "category": "Unknown", "confidence": 0.3, "rationale_short": "Cannot identify service from domain pattern", "fs_uc_code": "", "dt_code": "", "ch_code": "", "im_code": "", "rs_code": "", "ob_code": "", "ev_code": "", "taxonomy_version": "1.0"}}
 ]
+
+## Taxonomy Codes (Taxonomyセット)
+You MUST include all 7 taxonomy codes (fs_uc_code, dt_code, ch_code, im_code, rs_code, ob_code, ev_code) and taxonomy_version in your response.
+- If you cannot determine a taxonomy code, use empty string "" (列欠落禁止: columns must not be missing)
+- taxonomy_version should be set to the version provided in the schema (typically "1.0")
+- All taxonomy codes are required fields (列欠落禁止)
 """
 
 # Retry prompt when JSON validation fails
@@ -74,7 +80,9 @@ Return a single JSON object (not an array) matching this schema:
 {json_schema}
 
 If you cannot identify the service, respond with:
-{{"service_name": "Unknown", "usage_type": "unknown", "risk_level": "medium", "category": "Unknown", "confidence": 0.3, "rationale_short": "Unable to identify service"}}
+{{"service_name": "Unknown", "usage_type": "unknown", "risk_level": "medium", "category": "Unknown", "confidence": 0.3, "rationale_short": "Unable to identify service", "fs_uc_code": "", "dt_code": "", "ch_code": "", "im_code": "", "rs_code": "", "ob_code": "", "ev_code": "", "taxonomy_version": "1.0"}}
+
+Note: All taxonomy codes (fs_uc_code, dt_code, ch_code, im_code, rs_code, ob_code, ev_code) and taxonomy_version are REQUIRED fields (列欠落禁止). Use empty string "" if unknown.
 """
 
 
@@ -118,5 +126,13 @@ def get_json_schema_for_prompt() -> str:
   "risk_level": "low|medium|high (required)",
   "category": "string (required)",
   "confidence": "number 0.0-1.0 (required)",
-  "rationale_short": "string max 400 chars (required)"
+  "rationale_short": "string max 400 chars (required)",
+  "fs_uc_code": "string (required, use empty string if unknown)",
+  "dt_code": "string (required, use empty string if unknown)",
+  "ch_code": "string (required, use empty string if unknown)",
+  "im_code": "string (required, use empty string if unknown)",
+  "rs_code": "string (required, use empty string if unknown)",
+  "ob_code": "string (required, use empty string if unknown)",
+  "ev_code": "string (required, use empty string if unknown)",
+  "taxonomy_version": "string (required, typically '1.0')"
 }"""
