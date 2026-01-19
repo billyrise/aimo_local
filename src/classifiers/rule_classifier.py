@@ -322,9 +322,9 @@ class RuleClassifier:
             match_reason: How the match was made
         
         Returns:
-            Classification dict
+            Classification dict (includes taxonomy codes if available in rule)
         """
-        return {
+        classification = {
             "service_name": rule["service_name"],
             "category": rule["category"],
             "usage_type": rule["usage_type"],
@@ -335,6 +335,19 @@ class RuleClassifier:
             "confidence": 1.0,  # Rule-based classifications are always 1.0
             "rationale_short": rule.get("notes", "")[:400]  # Max 400 chars
         }
+        
+        # Add taxonomy codes if available in rule (Taxonomyセット対応)
+        # Unknownの場合でも列は欠落させず、空文字列で整合を取る
+        taxonomy_codes = rule.get("taxonomy_codes", {})
+        classification["fs_uc_code"] = taxonomy_codes.get("fs_uc_code", "")
+        classification["dt_code"] = taxonomy_codes.get("dt_code", "")
+        classification["ch_code"] = taxonomy_codes.get("ch_code", "")
+        classification["im_code"] = taxonomy_codes.get("im_code", "")
+        classification["rs_code"] = taxonomy_codes.get("rs_code", "")
+        classification["ob_code"] = taxonomy_codes.get("ob_code", "")
+        classification["ev_code"] = taxonomy_codes.get("ev_code", "")
+        
+        return classification
     
     def classify_batch(self, signatures: List[Dict[str, Any]]) -> Dict[str, Optional[Dict[str, Any]]]:
         """

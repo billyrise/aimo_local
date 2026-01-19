@@ -5,7 +5,7 @@
   "description": "Schema for LLM-generated service classification results",
   "type": "object",
   "additionalProperties": false,
-  "required": ["service_name", "usage_type", "risk_level", "category", "confidence", "rationale_short"],
+  "required": ["service_name", "usage_type", "risk_level", "category", "confidence", "rationale_short", "fs_uc_code", "dt_code", "ch_code", "im_code", "rs_code", "ob_code", "ev_code", "taxonomy_version"],
   "properties": {
     "service_name": {
       "type": "string",
@@ -39,6 +39,54 @@
       "type": "string",
       "maxLength": 400,
       "description": "Brief explanation for the classification decision"
+    },
+    "fs_uc_code": {
+      "type": "string",
+      "description": "FS-UC code (Taxonomyセット). Use empty string if unknown.",
+      "minLength": 0,
+      "maxLength": 50
+    },
+    "dt_code": {
+      "type": "string",
+      "description": "DT code (Taxonomyセット). Use empty string if unknown.",
+      "minLength": 0,
+      "maxLength": 50
+    },
+    "ch_code": {
+      "type": "string",
+      "description": "CH code (Taxonomyセット). Use empty string if unknown.",
+      "minLength": 0,
+      "maxLength": 50
+    },
+    "im_code": {
+      "type": "string",
+      "description": "IM code (Taxonomyセット). Use empty string if unknown.",
+      "minLength": 0,
+      "maxLength": 50
+    },
+    "rs_code": {
+      "type": "string",
+      "description": "RS code (Taxonomyセット). Use empty string if unknown.",
+      "minLength": 0,
+      "maxLength": 50
+    },
+    "ob_code": {
+      "type": "string",
+      "description": "OB code (Taxonomyセット). Use empty string if unknown.",
+      "minLength": 0,
+      "maxLength": 50
+    },
+    "ev_code": {
+      "type": "string",
+      "description": "EV code (Taxonomyセット). Use empty string if unknown.",
+      "minLength": 0,
+      "maxLength": 50
+    },
+    "taxonomy_version": {
+      "type": "string",
+      "description": "Taxonomy version used for classification (Taxonomyセット)",
+      "minLength": 1,
+      "maxLength": 20
     },
     "suggested_domains": {
       "type": "array",

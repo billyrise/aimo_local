@@ -27,6 +27,9 @@ CREATE TABLE IF NOT EXISTS runs (
     signature_version VARCHAR NOT NULL,
     rule_version VARCHAR NOT NULL,
     prompt_version VARCHAR NOT NULL,
+    taxonomy_version VARCHAR,                    -- Taxonomy version (for Taxonomyセット)
+    evidence_pack_version VARCHAR,               -- Evidence Pack version
+    engine_spec_version VARCHAR,                 -- Engine spec version (v1.4)
     psl_hash VARCHAR,                            -- Public Suffix List hash
     
     -- Input tracking
@@ -97,7 +100,17 @@ CREATE TABLE IF NOT EXISTS analysis_cache (
     signature_version VARCHAR,
     rule_version VARCHAR,
     prompt_version VARCHAR,
+    taxonomy_version VARCHAR,                    -- Taxonomy version (for Taxonomyセット)
     model VARCHAR,                               -- LLM model used (if applicable)
+    
+    -- Taxonomy codes (7 codes: FS-UC/DT/CH/IM/RS/OB/EV)
+    fs_uc_code VARCHAR,                          -- FS-UC code (nullable開始、出力列は必須)
+    dt_code VARCHAR,                             -- DT code
+    ch_code VARCHAR,                             -- CH code
+    im_code VARCHAR,                             -- IM code
+    rs_code VARCHAR,                             -- RS code
+    ob_code VARCHAR,                             -- OB code
+    ev_code VARCHAR,                             -- EV code
     
     -- Status tracking
     status VARCHAR DEFAULT 'active',             -- active/needs_review/skipped/failed_permanent
@@ -154,6 +167,16 @@ CREATE TABLE IF NOT EXISTS signature_stats (
     -- Candidate selection
     candidate_flags VARCHAR,                     -- A/B/C flags
     sampled BOOLEAN DEFAULT FALSE,               -- Part of C sample
+    
+    -- Taxonomy codes (7 codes: FS-UC/DT/CH/IM/RS/OB/EV)
+    fs_uc_code VARCHAR,                          -- FS-UC code (nullable開始、出力列は必須)
+    dt_code VARCHAR,                             -- DT code
+    ch_code VARCHAR,                             -- CH code
+    im_code VARCHAR,                             -- IM code
+    rs_code VARCHAR,                             -- RS code
+    ob_code VARCHAR,                             -- OB code
+    ev_code VARCHAR,                             -- EV code
+    taxonomy_version VARCHAR,                    -- Taxonomy version (for Taxonomyセット)
     
     -- Time range
     first_seen TIMESTAMP,

@@ -731,7 +731,7 @@ class LLMClient:
                 if len(results) != len(signatures):
                     # Pad or truncate to match
                     if len(results) < len(signatures):
-                        # Pad with "Unknown"
+                        # Pad with "Unknown" (including required taxonomy codes)
                         for i in range(len(results), len(signatures)):
                             results.append({
                                 "service_name": "Unknown",
@@ -739,11 +739,39 @@ class LLMClient:
                                 "risk_level": "medium",
                                 "category": "Unknown",
                                 "confidence": 0.3,
-                                "rationale_short": "LLM returned fewer results than expected"
+                                "rationale_short": "LLM returned fewer results than expected",
+                                "fs_uc_code": "",
+                                "dt_code": "",
+                                "ch_code": "",
+                                "im_code": "",
+                                "rs_code": "",
+                                "ob_code": "",
+                                "ev_code": "",
+                                "taxonomy_version": "1.0"
                             })
                     else:
                         # Truncate
                         results = results[:len(signatures)]
+                
+                # Ensure all results have required taxonomy codes (列欠落禁止)
+                for result in results:
+                    # Set default values for missing taxonomy codes
+                    if "fs_uc_code" not in result:
+                        result["fs_uc_code"] = ""
+                    if "dt_code" not in result:
+                        result["dt_code"] = ""
+                    if "ch_code" not in result:
+                        result["ch_code"] = ""
+                    if "im_code" not in result:
+                        result["im_code"] = ""
+                    if "rs_code" not in result:
+                        result["rs_code"] = ""
+                    if "ob_code" not in result:
+                        result["ob_code"] = ""
+                    if "ev_code" not in result:
+                        result["ev_code"] = ""
+                    if "taxonomy_version" not in result:
+                        result["taxonomy_version"] = "1.0"
                 
                 # Success - return results with retry summary
                 return results, retry_summary

@@ -53,6 +53,7 @@ from reporting.excel_writer import ExcelWriter
 from llm.client import LLMClient
 from reporting.report_builder import ReportBuilder
 from reporting.sanitized_export import SanitizedExporter
+from reporting.evidence_pack_generator import EvidencePackGenerator
 from db.duckdb_client import DuckDBClient
 # Import Orchestrator from src/orchestrator.py (not from orchestrator module)
 import sys
@@ -258,8 +259,8 @@ def _main_internal(args):
     print(f"Last completed stage: {run_context.last_completed_stage}")
     print()
     
-    # Create output directory
-    output_dir = Path(args.output_dir)
+    # Create output directory (run_id specific: data/output/<run_id>/)
+    output_dir = Path(args.output_dir) / run_context.run_id
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Create processed directory for Parquet files
@@ -971,7 +972,8 @@ def _stage_3_rule_classification(orchestrator: Orchestrator, db_client: DuckDBCl
         )
         
         if classification:
-            # Save to analysis_cache
+            # Save to analysis_cache with taxonomy codes (if available from rule)
+            taxonomy_version = orchestrator.taxonomy_version
             db_client.upsert("analysis_cache", {
                 "url_signature": url_sig,
                 "service_name": classification["service_name"],
@@ -984,6 +986,14 @@ def _stage_3_rule_classification(orchestrator: Orchestrator, db_client: DuckDBCl
                 "signature_version": signature_builder.signature_version,
                 "rule_version": str(classification["rule_version"]),
                 "prompt_version": "1",
+                "taxonomy_version": taxonomy_version,
+                "fs_uc_code": classification.get("fs_uc_code", ""),
+                "dt_code": classification.get("dt_code", ""),
+                "ch_code": classification.get("ch_code", ""),
+                "im_code": classification.get("im_code", ""),
+                "rs_code": classification.get("rs_code", ""),
+                "ob_code": classification.get("ob_code", ""),
+                "ev_code": classification.get("ev_code", ""),
                 "status": "active",
                 "is_human_verified": False,
                 "analysis_date": datetime.utcnow().isoformat()
@@ -997,6 +1007,55 @@ def _stage_3_rule_classification(orchestrator: Orchestrator, db_client: DuckDBCl
     
     # Flush writes
     db_client.flush()
+    
+    # Update signature_stats with taxonomy codes from analysis_cache (Taxonomyセット対応)
+    # This ensures signature_stats has 7 codes for Evidence Pack generation
+    print("  Updating signature_stats with taxonomy codes from analysis_cache...")
+    # DuckDB UPDATE ... FROM syntax (DuckDB supports UPDATE ... FROM)
+    update_query = """
+    UPDATE signature_stats
+    SET 
+        fs_uc_code = COALESCE(ac.fs_uc_code, ''),
+        dt_code = COALESCE(ac.dt_code, ''),
+        ch_code = COALESCE(ac.ch_code, ''),
+        im_code = COALESCE(ac.im_code, ''),
+        rs_code = COALESCE(ac.rs_code, ''),
+        ob_code = COALESCE(ac.ob_code, ''),
+        ev_code = COALESCE(ac.ev_code, ''),
+        taxonomy_version = COALESCE(ac.taxonomy_version, ?)
+    FROM analysis_cache ac
+    WHERE signature_stats.run_id = ?
+        AND signature_stats.url_signature = ac.url_signature
+        AND ac.status = 'active'
+    """
+    try:
+        if db_client._writer_conn:
+            db_client._writer_conn.execute(update_query, [orchestrator.taxonomy_version, run_context.run_id])
+            db_client._writer_conn.commit()
+    except Exception as e:
+        # If UPDATE ... FROM fails, try alternative approach (individual updates)
+        print(f"  WARNING: UPDATE ... FROM failed, trying alternative approach: {e}", flush=True)
+        try:
+            # Alternative: Use subquery-based UPDATE
+            alt_query = """
+            UPDATE signature_stats
+            SET 
+                fs_uc_code = (SELECT COALESCE(fs_uc_code, '') FROM analysis_cache WHERE url_signature = signature_stats.url_signature AND status = 'active' LIMIT 1),
+                dt_code = (SELECT COALESCE(dt_code, '') FROM analysis_cache WHERE url_signature = signature_stats.url_signature AND status = 'active' LIMIT 1),
+                ch_code = (SELECT COALESCE(ch_code, '') FROM analysis_cache WHERE url_signature = signature_stats.url_signature AND status = 'active' LIMIT 1),
+                im_code = (SELECT COALESCE(im_code, '') FROM analysis_cache WHERE url_signature = signature_stats.url_signature AND status = 'active' LIMIT 1),
+                rs_code = (SELECT COALESCE(rs_code, '') FROM analysis_cache WHERE url_signature = signature_stats.url_signature AND status = 'active' LIMIT 1),
+                ob_code = (SELECT COALESCE(ob_code, '') FROM analysis_cache WHERE url_signature = signature_stats.url_signature AND status = 'active' LIMIT 1),
+                ev_code = (SELECT COALESCE(ev_code, '') FROM analysis_cache WHERE url_signature = signature_stats.url_signature AND status = 'active' LIMIT 1),
+                taxonomy_version = COALESCE((SELECT taxonomy_version FROM analysis_cache WHERE url_signature = signature_stats.url_signature AND status = 'active' LIMIT 1), ?)
+            WHERE run_id = ?
+            """
+            if db_client._writer_conn:
+                db_client._writer_conn.execute(alt_query, [orchestrator.taxonomy_version, run_context.run_id])
+                db_client._writer_conn.commit()
+        except Exception as e2:
+            print(f"  WARNING: Alternative UPDATE approach also failed: {e2}", flush=True)
+            print(f"  Continuing without taxonomy code update (Evidence Pack may have NULL values)", flush=True)
     
     print(f"  Rule-classified: {rule_classified_count} (newly: {newly_classified_count}, cache hits: {rule_classified_count - newly_classified_count})")
     print(f"  Unknown (needs LLM): {unknown_count}")
@@ -1157,6 +1216,8 @@ def _stage_4_llm_analysis(orchestrator: Orchestrator, db_client: DuckDBClient,
             for sig_data, classification in zip(batch, classifications):
                 url_sig = sig_data["url_signature"]
                 
+                # Extract taxonomy codes from LLM output (required fields)
+                taxonomy_version = classification.get("taxonomy_version", orchestrator.taxonomy_version)
                 db_client.upsert("analysis_cache", {
                     "url_signature": url_sig,
                     "service_name": classification["service_name"],
@@ -1169,6 +1230,14 @@ def _stage_4_llm_analysis(orchestrator: Orchestrator, db_client: DuckDBClient,
                     "signature_version": signature_builder.signature_version,
                     "rule_version": "1",
                     "prompt_version": "1",
+                    "taxonomy_version": taxonomy_version,
+                    "fs_uc_code": classification.get("fs_uc_code", ""),
+                    "dt_code": classification.get("dt_code", ""),
+                    "ch_code": classification.get("ch_code", ""),
+                    "im_code": classification.get("im_code", ""),
+                    "rs_code": classification.get("rs_code", ""),
+                    "ob_code": classification.get("ob_code", ""),
+                    "ev_code": classification.get("ev_code", ""),
                     "model": llm_client.provider_config.get("model", "unknown"),
                     "status": "active",
                     "is_human_verified": False,
@@ -1222,6 +1291,55 @@ def _stage_4_llm_analysis(orchestrator: Orchestrator, db_client: DuckDBClient,
     
     # Flush writes
     db_client.flush()
+    
+    # Update signature_stats with taxonomy codes from analysis_cache (Taxonomyセット対応)
+    # This ensures signature_stats has 7 codes for Evidence Pack generation (after LLM analysis)
+    print("  Updating signature_stats with taxonomy codes from analysis_cache (after LLM)...")
+    # DuckDB UPDATE ... FROM syntax (DuckDB supports UPDATE ... FROM)
+    update_query = """
+    UPDATE signature_stats
+    SET 
+        fs_uc_code = COALESCE(ac.fs_uc_code, ''),
+        dt_code = COALESCE(ac.dt_code, ''),
+        ch_code = COALESCE(ac.ch_code, ''),
+        im_code = COALESCE(ac.im_code, ''),
+        rs_code = COALESCE(ac.rs_code, ''),
+        ob_code = COALESCE(ac.ob_code, ''),
+        ev_code = COALESCE(ac.ev_code, ''),
+        taxonomy_version = COALESCE(ac.taxonomy_version, ?)
+    FROM analysis_cache ac
+    WHERE signature_stats.run_id = ?
+        AND signature_stats.url_signature = ac.url_signature
+        AND ac.status = 'active'
+    """
+    try:
+        if db_client._writer_conn:
+            db_client._writer_conn.execute(update_query, [orchestrator.taxonomy_version, run_context.run_id])
+            db_client._writer_conn.commit()
+    except Exception as e:
+        # If UPDATE ... FROM fails, try alternative approach (individual updates)
+        print(f"  WARNING: UPDATE ... FROM failed, trying alternative approach: {e}", flush=True)
+        try:
+            # Alternative: Use subquery-based UPDATE
+            alt_query = """
+            UPDATE signature_stats
+            SET 
+                fs_uc_code = (SELECT COALESCE(fs_uc_code, '') FROM analysis_cache WHERE url_signature = signature_stats.url_signature AND status = 'active' LIMIT 1),
+                dt_code = (SELECT COALESCE(dt_code, '') FROM analysis_cache WHERE url_signature = signature_stats.url_signature AND status = 'active' LIMIT 1),
+                ch_code = (SELECT COALESCE(ch_code, '') FROM analysis_cache WHERE url_signature = signature_stats.url_signature AND status = 'active' LIMIT 1),
+                im_code = (SELECT COALESCE(im_code, '') FROM analysis_cache WHERE url_signature = signature_stats.url_signature AND status = 'active' LIMIT 1),
+                rs_code = (SELECT COALESCE(rs_code, '') FROM analysis_cache WHERE url_signature = signature_stats.url_signature AND status = 'active' LIMIT 1),
+                ob_code = (SELECT COALESCE(ob_code, '') FROM analysis_cache WHERE url_signature = signature_stats.url_signature AND status = 'active' LIMIT 1),
+                ev_code = (SELECT COALESCE(ev_code, '') FROM analysis_cache WHERE url_signature = signature_stats.url_signature AND status = 'active' LIMIT 1),
+                taxonomy_version = COALESCE((SELECT taxonomy_version FROM analysis_cache WHERE url_signature = signature_stats.url_signature AND status = 'active' LIMIT 1), ?)
+            WHERE run_id = ?
+            """
+            if db_client._writer_conn:
+                db_client._writer_conn.execute(alt_query, [orchestrator.taxonomy_version, run_context.run_id])
+                db_client._writer_conn.commit()
+        except Exception as e2:
+            print(f"  WARNING: Alternative UPDATE approach also failed: {e2}", flush=True)
+            print(f"  Continuing without taxonomy code update (Evidence Pack may have NULL values)", flush=True)
     
     print(f"  LLM-analyzed: {llm_analyzed_count}")
     print(f"  Needs review: {llm_needs_review_count}")
@@ -1364,6 +1482,39 @@ def _stage_5_reporting(orchestrator: Orchestrator, canonical_events: list, signa
             print(f"  Generated sanitized CSV: {sanitized_path} ({row_count} rows)")
     except Exception as e:
         print(f"  WARNING: Failed to generate sanitized CSV: {e}")
+        print(f"  Continuing with other reports...")
+    
+    # Generate Evidence Pack (Taxonomyセット対応)
+    # Output directory structure: data/output/<run_id>/evidence_pack/
+    evidence_pack_dir = output_dir / "evidence_pack"
+    try:
+        evidence_pack_gen = EvidencePackGenerator(evidence_pack_dir)
+        evidence_pack_paths = evidence_pack_gen.generate_evidence_pack(
+            run_id=run_context.run_id,
+            db_reader=reader,
+            taxonomy_version=orchestrator.taxonomy_version,
+            evidence_pack_version=orchestrator.evidence_pack_version,
+            engine_spec_version=orchestrator.engine_spec_version
+        )
+        print(f"  Generated Evidence Pack JSON: {evidence_pack_paths['json_path']}")
+        print(f"  Generated Evidence Pack Excel: {evidence_pack_paths['xlsx_path']}")
+        
+        # Generate run_manifest.json
+        manifest_path = evidence_pack_gen.generate_run_manifest(
+            run_id=run_context.run_id,
+            run_key=run_context.run_key,
+            started_at=run_context.started_at,
+            finished_at=finished_at,
+            signature_version=signature_builder.signature_version,
+            rule_version=orchestrator.rule_version,
+            prompt_version=orchestrator.prompt_version,
+            taxonomy_version=orchestrator.taxonomy_version,
+            evidence_pack_version=orchestrator.evidence_pack_version,
+            engine_spec_version=orchestrator.engine_spec_version
+        )
+        print(f"  Generated run_manifest.json: {manifest_path}")
+    except Exception as e:
+        print(f"  WARNING: Failed to generate Evidence Pack: {e}")
         print(f"  Continuing with other reports...")
     
     print()
