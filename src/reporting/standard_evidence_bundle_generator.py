@@ -252,7 +252,13 @@ class StandardEvidenceBundleGenerator:
         return manifest_path
     
     def _query_analysis_data(self, db_reader, run_id: str) -> List[Dict[str, Any]]:
-        """Query analysis data from database."""
+        """
+        Query analysis data from database with backward-compatible normalization.
+        
+        Uses db.compat layer to normalize legacy and new format records.
+        Records with legacy-only data are marked needs_review=True.
+        """
+        # Query includes both new and legacy columns for compatibility
         query = """
         SELECT 
             ss.url_signature,
@@ -281,7 +287,14 @@ class StandardEvidenceBundleGenerator:
             ac.rs_codes_json,
             ac.ev_codes_json,
             ac.ob_codes_json,
-            ac.taxonomy_schema_version
+            ac.taxonomy_schema_version,
+            -- Legacy columns for backward compatibility
+            ac.fs_uc_code,
+            ac.dt_code,
+            ac.ch_code,
+            ac.rs_code,
+            ac.ob_code,
+            ac.ev_code
         FROM signature_stats ss
         LEFT JOIN analysis_cache ac ON ss.url_signature = ac.url_signature
         WHERE ss.run_id = ?
@@ -290,16 +303,41 @@ class StandardEvidenceBundleGenerator:
         
         rows = db_reader.execute(query, [run_id]).fetchall()
         
+        # Import compatibility layer
+        from db.compat import normalize_taxonomy_record
+        
         results = []
         for row in rows:
             (url_sig, norm_host, norm_path, dest_domain, bytes_sum, access_count,
              unique_users, candidate_flags, first_seen, last_seen, service_name,
              category, usage_type, risk_level, confidence, classification_source,
              rationale, fs_code, im_code, uc_json, dt_json, ch_json, rs_json,
-             ev_json, ob_json, taxonomy_version) = row
+             ev_json, ob_json, taxonomy_version,
+             # Legacy columns
+             fs_uc_code, dt_code, ch_code, rs_code, ob_code, ev_code) = row
             
-            # Parse JSON arrays
-            from utils.json_canonical import parse_json_array
+            # Build row dict for normalization
+            taxonomy_row = {
+                "fs_code": fs_code,
+                "im_code": im_code,
+                "uc_codes_json": uc_json,
+                "dt_codes_json": dt_json,
+                "ch_codes_json": ch_json,
+                "rs_codes_json": rs_json,
+                "ev_codes_json": ev_json,
+                "ob_codes_json": ob_json,
+                "taxonomy_schema_version": taxonomy_version,
+                # Legacy
+                "fs_uc_code": fs_uc_code,
+                "dt_code": dt_code,
+                "ch_code": ch_code,
+                "rs_code": rs_code,
+                "ob_code": ob_code,
+                "ev_code": ev_code,
+            }
+            
+            # Normalize using compat layer
+            normalized = normalize_taxonomy_record(taxonomy_row, self.aimo_standard_version)
             
             results.append({
                 "url_signature": url_sig or "",
@@ -319,16 +357,19 @@ class StandardEvidenceBundleGenerator:
                 "confidence": float(confidence) if confidence else 0.0,
                 "classification_source": classification_source or "UNKNOWN",
                 "rationale_short": rationale or "",
-                # 8-dimension codes
-                "fs_code": fs_code or "",
-                "im_code": im_code or "",
-                "uc_codes": parse_json_array(uc_json),
-                "dt_codes": parse_json_array(dt_json),
-                "ch_codes": parse_json_array(ch_json),
-                "rs_codes": parse_json_array(rs_json),
-                "ev_codes": parse_json_array(ev_json),
-                "ob_codes": parse_json_array(ob_json),
-                "taxonomy_version": taxonomy_version or self.aimo_standard_version
+                # 8-dimension codes (normalized)
+                "fs_code": normalized.fs_code,
+                "im_code": normalized.im_code,
+                "uc_codes": normalized.uc_codes,
+                "dt_codes": normalized.dt_codes,
+                "ch_codes": normalized.ch_codes,
+                "rs_codes": normalized.rs_codes,
+                "ev_codes": normalized.ev_codes,
+                "ob_codes": normalized.ob_codes,
+                "taxonomy_version": normalized.taxonomy_version,
+                # Migration metadata
+                "_needs_review": normalized.needs_review,
+                "_source_format": normalized.source_format,
             })
         
         return results
