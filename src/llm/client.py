@@ -294,6 +294,82 @@ class LLMClient:
             pass  # Standard Adapter not available
         except Exception as e:
             print(f"Warning: Could not initialize taxonomy adapter: {e}", flush=True)
+        
+        # Cache for fallback codes (populated lazily)
+        self._fallback_code_cache: Dict[str, str] = {}
+    
+    def _get_fallback_code(self, dim: str) -> str:
+        """
+        Get a fallback code for a dimension dynamically from Standard Adapter.
+        
+        Priority order:
+        1. Code with "Unknown" in label (e.g., "Unknown Function")
+        2. Code with "Other" in label (e.g., "Other Service")
+        3. Code ending in -099 (legacy convention)
+        4. Last code in allowed codes (fallback)
+        5. Static fallback {DIM}-099 (only if adapter unavailable)
+        
+        Args:
+            dim: Dimension code (e.g., "FS", "IM", "UC", "DT", "CH", "RS", "EV", "OB")
+        
+        Returns:
+            A valid fallback code for the dimension
+        """
+        dim = dim.upper()
+        
+        # Check cache first
+        if dim in self._fallback_code_cache:
+            return self._fallback_code_cache[dim]
+        
+        # Static fallback (used only if adapter unavailable)
+        static_fallback = f"{dim}-099"
+        
+        # Try to get from taxonomy adapter
+        if self._taxonomy_adapter is None:
+            return static_fallback
+        
+        try:
+            # Get allowed codes for dimension
+            allowed_codes = self._taxonomy_adapter.get_allowed_codes(dim)
+            
+            if not allowed_codes:
+                return static_fallback
+            
+            # Priority 1: Look for "Unknown" in label
+            for code in allowed_codes:
+                try:
+                    label = self._taxonomy_adapter.get_code_label(code)
+                    if label and "unknown" in label.lower():
+                        self._fallback_code_cache[dim] = code
+                        return code
+                except Exception:
+                    continue
+            
+            # Priority 2: Look for "Other" in label
+            for code in allowed_codes:
+                try:
+                    label = self._taxonomy_adapter.get_code_label(code)
+                    if label and "other" in label.lower():
+                        self._fallback_code_cache[dim] = code
+                        return code
+                except Exception:
+                    continue
+            
+            # Priority 3: Look for -099 suffix (legacy convention)
+            for code in allowed_codes:
+                if code.endswith("-099"):
+                    self._fallback_code_cache[dim] = code
+                    return code
+            
+            # Priority 4: Use last code in allowed codes (assumed to be "other" by convention)
+            fallback = allowed_codes[-1]
+            self._fallback_code_cache[dim] = fallback
+            return fallback
+            
+        except Exception as e:
+            # Log warning and use static fallback
+            print(f"Warning: Could not get fallback code for {dim}: {e}", flush=True)
+            return static_fallback
     
     def _check_budget(self, estimated_cost_usd: float, candidate_flags: Optional[str] = None) -> Tuple[bool, str]:
         """
@@ -618,6 +694,9 @@ class LLMClient:
         """
         Get a default "Unknown" classification with 8-dimension format.
         
+        Uses _get_fallback_code() to dynamically resolve valid codes from
+        the Standard Adapter, ensuring compatibility with Standard updates.
+        
         Returns:
             Classification dict with fallback codes
         """
@@ -628,14 +707,14 @@ class LLMClient:
             "category": "Unknown",
             "confidence": 0.3,
             "rationale_short": "Unable to identify service",
-            "fs_code": "FS-099",
-            "im_code": "IM-099",
-            "uc_codes": ["UC-099"],
-            "dt_codes": ["DT-099"],
-            "ch_codes": ["CH-099"],
-            "rs_codes": ["RS-099"],
-            "ev_codes": ["EV-099"],
-            "ob_codes": [],
+            "fs_code": self._get_fallback_code("FS"),
+            "im_code": self._get_fallback_code("IM"),
+            "uc_codes": [self._get_fallback_code("UC")],
+            "dt_codes": [self._get_fallback_code("DT")],
+            "ch_codes": [self._get_fallback_code("CH")],
+            "rs_codes": [self._get_fallback_code("RS")],
+            "ev_codes": [self._get_fallback_code("EV")],
+            "ob_codes": [],  # OB is 0+ cardinality, empty is valid
             "aimo_standard_version": self.aimo_standard_version
         }
     
@@ -666,20 +745,20 @@ class LLMClient:
             # Legacy 7-code format - convert to 8-dimension
             normalized = self._convert_legacy_to_8dim(normalized)
         
-        # Ensure fs_code is string
+        # Ensure fs_code is string (use dynamic fallback)
         if "fs_code" not in normalized or not isinstance(normalized.get("fs_code"), str):
-            normalized["fs_code"] = "FS-099"
+            normalized["fs_code"] = self._get_fallback_code("FS")
         
-        # Ensure im_code is string
+        # Ensure im_code is string (use dynamic fallback)
         if "im_code" not in normalized or not isinstance(normalized.get("im_code"), str):
-            normalized["im_code"] = "IM-099"
+            normalized["im_code"] = self._get_fallback_code("IM")
         
-        # Ensure array fields
+        # Ensure array fields (use dynamic fallback codes)
         for field in ["uc_codes", "dt_codes", "ch_codes", "rs_codes", "ev_codes", "ob_codes"]:
             if field not in normalized or not isinstance(normalized.get(field), list):
-                # Use fallback
+                # Use dynamic fallback from Standard Adapter
                 dim = field.replace("_codes", "").upper()
-                normalized[field] = [f"{dim}-099"] if field != "ob_codes" else []
+                normalized[field] = [self._get_fallback_code(dim)] if field != "ob_codes" else []
         
         # Validate cardinality
         validation_errors = []
@@ -694,9 +773,9 @@ class LLMClient:
         for field in ["uc_codes", "dt_codes", "ch_codes", "rs_codes", "ev_codes"]:
             if not normalized.get(field) or len(normalized[field]) < 1:
                 validation_errors.append(f"{field} requires at least 1 element")
-                # Add fallback
+                # Add dynamic fallback from Standard Adapter
                 dim = field.replace("_codes", "").upper()
-                normalized[field] = [f"{dim}-099"]
+                normalized[field] = [self._get_fallback_code(dim)]
         
         # Validate against taxonomy adapter if available
         if self._taxonomy_adapter and not validation_errors:
@@ -732,6 +811,9 @@ class LLMClient:
         """
         Convert legacy 7-code format to 8-dimension format.
         
+        Uses _get_fallback_code() for dynamic fallback resolution,
+        ensuring compatibility with Standard updates.
+        
         Args:
             legacy: Legacy classification with fs_uc_code, dt_code, etc.
         
@@ -745,11 +827,11 @@ class LLMClient:
         if fs_uc and fs_uc.startswith("FS-"):
             result["fs_code"] = fs_uc
         else:
-            result["fs_code"] = "FS-099"
+            result["fs_code"] = self._get_fallback_code("FS")
         
         # im_code stays as-is (single value)
         if "im_code" not in result or not result["im_code"]:
-            result["im_code"] = "IM-099"
+            result["im_code"] = self._get_fallback_code("IM")
         
         # Convert single codes to arrays
         for old_field, new_field in [
@@ -764,10 +846,11 @@ class LLMClient:
                 result[new_field] = [old_val]
             else:
                 dim = old_field.replace("_code", "").upper()
-                result[new_field] = [f"{dim}-099"] if new_field != "ob_codes" else []
+                # OB has 0+ cardinality, use empty array; others use fallback
+                result[new_field] = [self._get_fallback_code(dim)] if new_field != "ob_codes" else []
         
-        # UC from fs_uc_code is not directly extractable - use fallback
-        result["uc_codes"] = ["UC-099"]
+        # UC from fs_uc_code is not directly extractable - use dynamic fallback
+        result["uc_codes"] = [self._get_fallback_code("UC")]
         
         # Version
         result["aimo_standard_version"] = self.aimo_standard_version
