@@ -247,6 +247,8 @@ def sync_artifacts_to_cache(
     
     # Calculate directory hash
     manifest["directory_sha256"] = calculate_directory_sha256(version_cache_dir)
+    # Also provide as artifacts_dir_sha256 for API consistency
+    manifest["artifacts_dir_sha256"] = manifest["directory_sha256"]
     
     # List all files in cache
     for file_path in sorted(version_cache_dir.rglob("*")):
