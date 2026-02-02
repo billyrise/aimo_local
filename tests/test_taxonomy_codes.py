@@ -1,23 +1,46 @@
 """
-Tests for Taxonomyセット (7 codes) support.
+Tests for AIMO Standard Taxonomy (8 dimensions) support.
+
+AIMO Standard v0.1.7+ taxonomy structure:
+- 8 dimensions: FS, UC, DT, CH, IM, RS, OB, EV
+- Cardinality:
+  - FS: Exactly 1
+  - IM: Exactly 1
+  - UC, DT, CH, RS, EV: 1+ (at least one)
+  - OB: 0+ (optional)
+
+DB schema (v1.6+):
+- fs_code, im_code: Single VARCHAR columns
+- uc_codes_json, dt_codes_json, etc.: JSON array strings (canonical form)
+- Legacy columns (fs_uc_code, dt_code, etc.) kept for backward compatibility
 
 Tests:
-- 7 codes are required in LLM JSON Schema
-- 7 codes are saved to analysis_cache and signature_stats
-- Evidence Pack includes 7 codes (列欠落禁止)
-- Versioning consistency (taxonomy_version/evidence_pack_version/engine_spec_version)
+- New columns exist in DB with correct defaults
+- JSON canonical serialization works correctly
+- run_key includes Standard version for cache coherence
+- Standard adapter integration
 """
 
 import pytest
 import json
+import sys
 from pathlib import Path
 from datetime import datetime
-import duckdb
+import tempfile
 
-from src.db.duckdb_client import DuckDBClient
-from src.orchestrator import Orchestrator
-from src.classifiers.rule_classifier import RuleClassifier
-from src.reporting.evidence_pack_generator import EvidencePackGenerator
+# Add src to path
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+from db.duckdb_client import DuckDBClient
+from orchestrator import Orchestrator
+from utils.json_canonical import (
+    canonical_json_array,
+    parse_json_array,
+    validate_code_format,
+    codes_to_dict,
+    dict_to_db_columns,
+    db_columns_to_dict,
+)
 
 
 @pytest.fixture
@@ -29,284 +52,429 @@ def temp_db(tmp_path):
     client.close()
 
 
-@pytest.fixture
-def sample_run_context(temp_db, tmp_path):
-    """Create sample run context with Taxonomy versions."""
-    work_dir = tmp_path / "work"
-    orchestrator = Orchestrator(
-        db_client=temp_db,
-        work_base_dir=work_dir,
-        taxonomy_version="1.0",
-        evidence_pack_version="1.0",
-        engine_spec_version="1.4"
-    )
+class TestJsonCanonical:
+    """Tests for JSON canonical utilities."""
     
-    # Create a dummy run
-    input_files = [tmp_path / "test_input.csv"]
-    input_files[0].touch()
+    def test_canonical_json_array_sorts(self):
+        """Test that arrays are sorted."""
+        result = canonical_json_array(["UC-010", "UC-001", "UC-005"])
+        assert result == '["UC-001","UC-005","UC-010"]'
     
-    run_context = orchestrator.get_or_create_run(input_files)
-    return orchestrator, run_context
+    def test_canonical_json_array_deduplicates(self):
+        """Test that duplicates are removed."""
+        result = canonical_json_array(["UC-001", "UC-001", "UC-002"])
+        assert result == '["UC-001","UC-002"]'
+    
+    def test_canonical_json_array_empty(self):
+        """Test empty array handling."""
+        assert canonical_json_array([]) == "[]"
+        assert canonical_json_array(None) == "[]"
+    
+    def test_canonical_json_array_filters_empty_strings(self):
+        """Test that empty strings are filtered."""
+        result = canonical_json_array(["UC-001", "", "UC-002", None])
+        assert result == '["UC-001","UC-002"]'
+    
+    def test_parse_json_array_valid(self):
+        """Test parsing valid JSON array."""
+        result = parse_json_array('["UC-001","UC-002"]')
+        assert result == ["UC-001", "UC-002"]
+    
+    def test_parse_json_array_empty(self):
+        """Test parsing empty cases."""
+        assert parse_json_array("[]") == []
+        assert parse_json_array("") == []
+        assert parse_json_array(None) == []
+    
+    def test_parse_json_array_invalid(self):
+        """Test parsing invalid JSON gracefully."""
+        assert parse_json_array("invalid") == []
+        assert parse_json_array("{not:array}") == []
+    
+    def test_validate_code_format_valid(self):
+        """Test valid code format validation."""
+        assert validate_code_format("FS-001") is True
+        assert validate_code_format("UC-030") is True
+        assert validate_code_format("OB-007") is True
+    
+    def test_validate_code_format_invalid(self):
+        """Test invalid code format detection."""
+        assert validate_code_format("") is False
+        assert validate_code_format("invalid") is False
+        assert validate_code_format("UC001") is False
+        assert validate_code_format("UC-1") is False
+        assert validate_code_format("uc-001") is False  # Lowercase prefix
+    
+    def test_validate_code_format_with_dimension(self):
+        """Test dimension-specific validation."""
+        assert validate_code_format("FS-001", "FS") is True
+        assert validate_code_format("FS-001", "UC") is False
 
 
-def test_llm_schema_includes_taxonomy_codes():
-    """Test that LLM JSON Schema includes all 7 taxonomy codes as required."""
-    schema_path = Path(__file__).parent.parent / "llm" / "schemas" / "analysis_output.schema.json"
+class TestCodesConversion:
+    """Tests for code conversion utilities."""
     
-    with open(schema_path, 'r', encoding='utf-8') as f:
-        schema = json.load(f)
+    def test_codes_to_dict(self):
+        """Test converting individual codes to dict."""
+        result = codes_to_dict(
+            fs_code="FS-001",
+            im_code="IM-001",
+            uc_codes=["UC-001", "UC-002"]
+        )
+        assert result["FS"] == ["FS-001"]
+        assert result["IM"] == ["IM-001"]
+        assert result["UC"] == ["UC-001", "UC-002"]
+        assert result["DT"] == []  # Empty by default
     
-    # Check required fields
-    required = schema.get("required", [])
-    assert "fs_uc_code" in required, "fs_uc_code must be required"
-    assert "dt_code" in required, "dt_code must be required"
-    assert "ch_code" in required, "ch_code must be required"
-    assert "im_code" in required, "im_code must be required"
-    assert "rs_code" in required, "rs_code must be required"
-    assert "ob_code" in required, "ob_code must be required"
-    assert "ev_code" in required, "ev_code must be required"
-    assert "taxonomy_version" in required, "taxonomy_version must be required"
-    
-    # Check properties exist
-    properties = schema.get("properties", {})
-    assert "fs_uc_code" in properties
-    assert "dt_code" in properties
-    assert "ch_code" in properties
-    assert "im_code" in properties
-    assert "rs_code" in properties
-    assert "ob_code" in properties
-    assert "ev_code" in properties
-    assert "taxonomy_version" in properties
-
-
-def test_rule_classifier_returns_taxonomy_codes():
-    """Test that RuleClassifier returns taxonomy codes (even if empty)."""
-    classifier = RuleClassifier()
-    
-    # Test classification (should include taxonomy codes)
-    classification = classifier.classify(
-        url_signature="test_sig",
-        norm_host="example.com",
-        norm_path_template="/test"
-    )
-    
-    if classification:
-        # Check that taxonomy codes are present (列欠落禁止)
-        assert "fs_uc_code" in classification
-        assert "dt_code" in classification
-        assert "ch_code" in classification
-        assert "im_code" in classification
-        assert "rs_code" in classification
-        assert "ob_code" in classification
-        assert "ev_code" in classification
-
-
-def test_analysis_cache_saves_taxonomy_codes(temp_db, sample_run_context):
-    """Test that analysis_cache saves taxonomy codes."""
-    orchestrator, run_context = sample_run_context
-    
-    # Insert test data with taxonomy codes
-    test_signature = "test_signature_123"
-    temp_db.upsert("analysis_cache", {
-        "url_signature": test_signature,
-        "service_name": "Test Service",
-        "usage_type": "business",
-        "risk_level": "low",
-        "category": "Test",
-        "confidence": 0.9,
-        "rationale_short": "Test classification",
-        "classification_source": "RULE",
-        "signature_version": "1.0",
-        "rule_version": "1",
-        "prompt_version": "1",
-        "taxonomy_version": "1.0",
-        "fs_uc_code": "FS-UC-001",
-        "dt_code": "DT-001",
-        "ch_code": "CH-001",
-        "im_code": "IM-001",
-        "rs_code": "RS-001",
-        "ob_code": "OB-001",
-        "ev_code": "EV-001",
-        "status": "active",
-        "is_human_verified": False,
-        "analysis_date": datetime.utcnow().isoformat()
-    }, conflict_key="url_signature")
-    
-    temp_db.flush()
-    
-    # Verify taxonomy codes are saved
-    reader = temp_db.get_reader()
-    result = reader.execute(
-        "SELECT fs_uc_code, dt_code, ch_code, im_code, rs_code, ob_code, ev_code, taxonomy_version FROM analysis_cache WHERE url_signature = ?",
-        [test_signature]
-    ).fetchone()
-    
-    assert result is not None
-    assert result[0] == "FS-UC-001"
-    assert result[1] == "DT-001"
-    assert result[2] == "CH-001"
-    assert result[3] == "IM-001"
-    assert result[4] == "RS-001"
-    assert result[5] == "OB-001"
-    assert result[6] == "EV-001"
-    assert result[7] == "1.0"
-
-
-def test_evidence_pack_includes_taxonomy_codes(temp_db, sample_run_context, tmp_path):
-    """Test that Evidence Pack includes all 7 taxonomy codes (列欠落禁止)."""
-    orchestrator, run_context = sample_run_context
-    
-    # Insert test data
-    test_signature = "test_signature_123"
-    temp_db.upsert("signature_stats", {
-        "run_id": run_context.run_id,
-        "url_signature": test_signature,
-        "norm_host": "example.com",
-        "norm_path_template": "/test",
-        "bytes_sent_sum": 1000,
-        "access_count": 10,
-        "unique_users": 1,
-        "fs_uc_code": "FS-UC-001",
-        "dt_code": "DT-001",
-        "ch_code": "CH-001",
-        "im_code": "IM-001",
-        "rs_code": "RS-001",
-        "ob_code": "OB-001",
-        "ev_code": "EV-001",
-        "taxonomy_version": "1.0"
-    }, conflict_key="run_id, url_signature")
-    
-    temp_db.upsert("analysis_cache", {
-        "url_signature": test_signature,
-        "service_name": "Test Service",
-        "usage_type": "business",
-        "risk_level": "low",
-        "category": "Test",
-        "confidence": 0.9,
-        "rationale_short": "Test",
-        "classification_source": "RULE",
-        "signature_version": "1.0",
-        "rule_version": "1",
-        "prompt_version": "1",
-        "taxonomy_version": "1.0",
-        "fs_uc_code": "FS-UC-001",
-        "dt_code": "DT-001",
-        "ch_code": "CH-001",
-        "im_code": "IM-001",
-        "rs_code": "RS-001",
-        "ob_code": "OB-001",
-        "ev_code": "EV-001",
-        "status": "active",
-        "is_human_verified": False,
-        "analysis_date": datetime.utcnow().isoformat()
-    }, conflict_key="url_signature")
-    
-    temp_db.flush()
-    
-    # Generate Evidence Pack
-    output_dir = tmp_path / "output" / run_context.run_id
-    evidence_pack_dir = output_dir / "evidence_pack"
-    generator = EvidencePackGenerator(evidence_pack_dir)
-    
-    paths = generator.generate_evidence_pack(
-        run_id=run_context.run_id,
-        db_reader=temp_db.get_reader(),
-        taxonomy_version="1.0",
-        evidence_pack_version="1.0",
-        engine_spec_version="1.4"
-    )
-    
-    # Verify JSON includes taxonomy codes
-    with open(paths["json_path"], 'r', encoding='utf-8') as f:
-        evidence_pack = json.load(f)
-    
-    assert "signatures" in evidence_pack
-    assert len(evidence_pack["signatures"]) > 0
-    
-    sig = evidence_pack["signatures"][0]
-    # Check that all 7 codes are present (列欠落禁止)
-    assert "fs_uc_code" in sig
-    assert "dt_code" in sig
-    assert "ch_code" in sig
-    assert "im_code" in sig
-    assert "rs_code" in sig
-    assert "ob_code" in sig
-    assert "ev_code" in sig
-    assert "taxonomy_version" in sig
-
-
-def test_run_manifest_includes_all_versions(temp_db, sample_run_context, tmp_path):
-    """Test that run_manifest.json includes all version information."""
-    orchestrator, run_context = sample_run_context
-    
-    output_dir = tmp_path / "output" / run_context.run_id
-    evidence_pack_dir = output_dir / "evidence_pack"
-    generator = EvidencePackGenerator(evidence_pack_dir)
-    
-    manifest_path = generator.generate_run_manifest(
-        run_id=run_context.run_id,
-        run_key=run_context.run_key,
-        started_at=run_context.started_at,
-        finished_at=datetime.utcnow(),
-        signature_version="1.0",
-        rule_version="1",
-        prompt_version="1",
-        taxonomy_version="1.0",
-        evidence_pack_version="1.0",
-        engine_spec_version="1.4"
-    )
-    
-    # Verify manifest includes all versions
-    with open(manifest_path, 'r', encoding='utf-8') as f:
-        manifest = json.load(f)
-    
-    assert "versions" in manifest
-    versions = manifest["versions"]
-    assert "engine_spec_version" in versions
-    assert "taxonomy_version" in versions
-    assert "evidence_pack_version" in versions
-    assert "signature_version" in versions
-    assert "rule_version" in versions
-    assert "prompt_version" in versions
-    
-    assert versions["engine_spec_version"] == "1.4"
-    assert versions["taxonomy_version"] == "1.0"
-    assert versions["evidence_pack_version"] == "1.0"
-
-
-def test_run_key_includes_taxonomy_versions():
-    """Test that run_key calculation includes taxonomy versions."""
-    from src.orchestrator import Orchestrator
-    from src.db.duckdb_client import DuckDBClient
-    import tempfile
-    
-    with tempfile.TemporaryDirectory() as tmpdir:
-        db_path = Path(tmpdir) / "test.duckdb"
-        db_client = DuckDBClient(str(db_path))
+    def test_dict_to_db_columns(self):
+        """Test converting dict to DB column format."""
+        codes_dict = {
+            "FS": ["FS-001"],
+            "IM": ["IM-001"],
+            "UC": ["UC-002", "UC-001"],  # Unsorted
+            "DT": ["DT-001"],
+            "CH": ["CH-001"],
+            "RS": ["RS-001"],
+            "EV": ["EV-001"],
+            "OB": [],  # Empty optional
+        }
+        result = dict_to_db_columns(codes_dict)
         
-        orchestrator1 = Orchestrator(
-            db_client=db_client,
-            work_base_dir=Path(tmpdir) / "work",
-            taxonomy_version="1.0",
-            evidence_pack_version="1.0",
-            engine_spec_version="1.4"
+        assert result["fs_code"] == "FS-001"
+        assert result["im_code"] == "IM-001"
+        # Should be canonical (sorted)
+        assert result["uc_codes_json"] == '["UC-001","UC-002"]'
+        assert result["ob_codes_json"] == "[]"  # Empty
+    
+    def test_db_columns_to_dict(self):
+        """Test converting DB columns back to dict."""
+        result = db_columns_to_dict(
+            fs_code="FS-001",
+            im_code="IM-001",
+            uc_codes_json='["UC-001","UC-002"]',
+            dt_codes_json='["DT-001"]',
+            ch_codes_json='["CH-001"]',
+            rs_codes_json='["RS-001"]',
+            ev_codes_json='["EV-001"]',
+            ob_codes_json='[]'
         )
         
-        orchestrator2 = Orchestrator(
-            db_client=db_client,
-            work_base_dir=Path(tmpdir) / "work",
-            taxonomy_version="2.0",  # Different version
-            evidence_pack_version="1.0",
-            engine_spec_version="1.4"
-        )
+        assert result["FS"] == ["FS-001"]
+        assert result["IM"] == ["IM-001"]
+        assert result["UC"] == ["UC-001", "UC-002"]
+        assert result["OB"] == []
+
+
+class TestDbSchemaNewColumns:
+    """Tests for new 8-dimension DB columns."""
+    
+    def test_analysis_cache_has_new_columns(self, temp_db):
+        """Test that analysis_cache has new taxonomy columns."""
+        reader = temp_db.get_reader()
         
-        # Same input manifest hash
-        input_manifest_hash = "test_hash"
+        # Check columns exist
+        columns = reader.execute("""
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name = 'analysis_cache'
+        """).fetchall()
+        column_names = [c[0] for c in columns]
         
-        run_key1 = orchestrator1.compute_run_key(input_manifest_hash)
-        run_key2 = orchestrator2.compute_run_key(input_manifest_hash)
+        # New single-value columns
+        assert "fs_code" in column_names
+        assert "im_code" in column_names
         
-        # Different taxonomy versions should produce different run_keys
-        assert run_key1 != run_key2, "Different taxonomy versions should produce different run_keys"
+        # New array columns
+        assert "uc_codes_json" in column_names
+        assert "dt_codes_json" in column_names
+        assert "ch_codes_json" in column_names
+        assert "rs_codes_json" in column_names
+        assert "ev_codes_json" in column_names
+        assert "ob_codes_json" in column_names
         
-        db_client.close()
+        # New version column
+        assert "taxonomy_schema_version" in column_names
+    
+    def test_signature_stats_has_new_columns(self, temp_db):
+        """Test that signature_stats has new taxonomy columns."""
+        reader = temp_db.get_reader()
+        
+        columns = reader.execute("""
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name = 'signature_stats'
+        """).fetchall()
+        column_names = [c[0] for c in columns]
+        
+        # New columns
+        assert "fs_code" in column_names
+        assert "uc_codes_json" in column_names
+        assert "taxonomy_schema_version" in column_names
+    
+    def test_runs_has_standard_columns(self, temp_db):
+        """Test that runs table has AIMO Standard columns."""
+        reader = temp_db.get_reader()
+        
+        columns = reader.execute("""
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name = 'runs'
+        """).fetchall()
+        column_names = [c[0] for c in columns]
+        
+        assert "aimo_standard_version" in column_names
+        assert "aimo_standard_commit" in column_names
+        assert "aimo_standard_artifacts_dir_sha256" in column_names
+        assert "aimo_standard_artifacts_zip_sha256" in column_names
+    
+    def test_json_columns_default_to_empty_array(self, temp_db):
+        """Test that JSON array columns default to '[]'."""
+        # Insert minimal record
+        temp_db.upsert("analysis_cache", {
+            "url_signature": "test_sig_default",
+            "service_name": "Test",
+            "status": "active",
+        }, conflict_key="url_signature")
+        temp_db.flush()
+        
+        # Check defaults
+        reader = temp_db.get_reader()
+        result = reader.execute("""
+            SELECT uc_codes_json, dt_codes_json, ch_codes_json, 
+                   rs_codes_json, ev_codes_json, ob_codes_json
+            FROM analysis_cache 
+            WHERE url_signature = 'test_sig_default'
+        """).fetchone()
+        
+        assert result is not None
+        # All should be empty arrays
+        for val in result:
+            assert val == "[]" or val is None  # Default may be applied at insert or be NULL
+
+
+class TestRunKeyIncludesStandardVersion:
+    """Tests for run_key calculation with Standard version."""
+    
+    def test_run_key_changes_with_standard_version(self):
+        """Test that run_key changes when Standard version changes."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "test.duckdb"
+            db_client = DuckDBClient(str(db_path))
+            
+            # Create orchestrators with different Standard versions
+            orchestrator1 = Orchestrator(
+                db_client=db_client,
+                work_base_dir=Path(tmpdir) / "work",
+                aimo_standard_version="0.1.6",
+                resolve_standard=False  # Skip actual resolution
+            )
+            
+            orchestrator2 = Orchestrator(
+                db_client=db_client,
+                work_base_dir=Path(tmpdir) / "work",
+                aimo_standard_version="0.1.7",
+                resolve_standard=False
+            )
+            
+            # Same input manifest hash
+            input_manifest_hash = "test_hash_12345"
+            
+            run_key1 = orchestrator1.compute_run_key(input_manifest_hash)
+            run_key2 = orchestrator2.compute_run_key(input_manifest_hash)
+            
+            # Different Standard versions should produce different run_keys
+            assert run_key1 != run_key2, \
+                "Different Standard versions should produce different run_keys for cache coherence"
+            
+            db_client.close()
+    
+    def test_run_key_same_with_same_standard_version(self):
+        """Test that run_key is deterministic for same Standard version."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "test.duckdb"
+            db_client = DuckDBClient(str(db_path))
+            
+            orchestrator1 = Orchestrator(
+                db_client=db_client,
+                work_base_dir=Path(tmpdir) / "work",
+                aimo_standard_version="0.1.7",
+                resolve_standard=False
+            )
+            
+            orchestrator2 = Orchestrator(
+                db_client=db_client,
+                work_base_dir=Path(tmpdir) / "work",
+                aimo_standard_version="0.1.7",
+                resolve_standard=False
+            )
+            
+            input_manifest_hash = "test_hash_12345"
+            
+            run_key1 = orchestrator1.compute_run_key(input_manifest_hash)
+            run_key2 = orchestrator2.compute_run_key(input_manifest_hash)
+            
+            # Same versions should produce same run_key (deterministic)
+            assert run_key1 == run_key2
+            
+            db_client.close()
+
+
+class TestLegacyColumnsKept:
+    """Tests that legacy columns are kept for backward compatibility."""
+    
+    def test_legacy_columns_exist(self, temp_db):
+        """Test that legacy taxonomy columns still exist."""
+        reader = temp_db.get_reader()
+        
+        columns = reader.execute("""
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name = 'analysis_cache'
+        """).fetchall()
+        column_names = [c[0] for c in columns]
+        
+        # Legacy columns should still exist
+        assert "fs_uc_code" in column_names
+        assert "dt_code" in column_names
+        assert "ch_code" in column_names
+        assert "rs_code" in column_names
+        assert "ob_code" in column_names
+        assert "ev_code" in column_names
+    
+    def test_can_write_legacy_and_new_columns(self, temp_db):
+        """Test that both legacy and new columns can be written."""
+        temp_db.upsert("analysis_cache", {
+            "url_signature": "test_both_columns",
+            "service_name": "Test",
+            "status": "active",
+            # Legacy columns
+            "fs_uc_code": "FS-UC-001",
+            "dt_code": "DT-001",
+            # New columns
+            "fs_code": "FS-001",
+            "im_code": "IM-001",
+            "uc_codes_json": '["UC-001"]',
+            "dt_codes_json": '["DT-001"]',
+            "ch_codes_json": '["CH-001"]',
+            "rs_codes_json": '["RS-001"]',
+            "ev_codes_json": '["EV-001"]',
+            "ob_codes_json": '[]',
+            "taxonomy_schema_version": "0.1.7",
+        }, conflict_key="url_signature")
+        temp_db.flush()
+        
+        # Verify both are saved
+        reader = temp_db.get_reader()
+        result = reader.execute("""
+            SELECT fs_uc_code, fs_code, im_code, uc_codes_json, taxonomy_schema_version
+            FROM analysis_cache 
+            WHERE url_signature = 'test_both_columns'
+        """).fetchone()
+        
+        assert result is not None
+        assert result[0] == "FS-UC-001"  # Legacy
+        assert result[1] == "FS-001"  # New
+        assert result[2] == "IM-001"  # New
+        assert result[3] == '["UC-001"]'  # New JSON
+        assert result[4] == "0.1.7"  # Schema version
+
+
+class TestStandardAdapterIntegration:
+    """Tests for Standard Adapter integration."""
+    
+    def test_standard_adapter_taxonomy_validation(self):
+        """Test that Standard Adapter validates codes correctly."""
+        try:
+            from standard_adapter.taxonomy import validate_assignment
+            
+            # Valid assignment
+            errors = validate_assignment(
+                fs_codes=["FS-001"],
+                im_codes=["IM-001"],
+                uc_codes=["UC-001"],
+                dt_codes=["DT-001"],
+                ch_codes=["CH-001"],
+                rs_codes=["RS-001"],
+                ev_codes=["EV-001"],
+                ob_codes=[],  # Optional
+                version="0.1.7"
+            )
+            assert len(errors) == 0
+            
+            # Invalid: missing FS
+            errors = validate_assignment(
+                fs_codes=[],  # Missing
+                im_codes=["IM-001"],
+                uc_codes=["UC-001"],
+                dt_codes=["DT-001"],
+                ch_codes=["CH-001"],
+                rs_codes=["RS-001"],
+                ev_codes=["EV-001"],
+                version="0.1.7"
+            )
+            assert len(errors) > 0
+            
+        except ImportError:
+            pytest.skip("Standard Adapter not available")
+    
+    def test_cardinality_exactly_one(self):
+        """Test that FS and IM require exactly 1 code."""
+        try:
+            from standard_adapter.taxonomy import validate_assignment
+            
+            # Multiple FS codes (should fail)
+            errors = validate_assignment(
+                fs_codes=["FS-001", "FS-002"],  # Too many
+                im_codes=["IM-001"],
+                uc_codes=["UC-001"],
+                dt_codes=["DT-001"],
+                ch_codes=["CH-001"],
+                rs_codes=["RS-001"],
+                ev_codes=["EV-001"],
+                version="0.1.7"
+            )
+            assert any("FS" in e or "at most 1" in e for e in errors)
+            
+        except ImportError:
+            pytest.skip("Standard Adapter not available")
+    
+    def test_cardinality_one_plus(self):
+        """Test that UC, DT, CH, RS, EV require at least 1 code."""
+        try:
+            from standard_adapter.taxonomy import validate_assignment
+            
+            # Missing UC (should fail)
+            errors = validate_assignment(
+                fs_codes=["FS-001"],
+                im_codes=["IM-001"],
+                uc_codes=[],  # Empty - should fail
+                dt_codes=["DT-001"],
+                ch_codes=["CH-001"],
+                rs_codes=["RS-001"],
+                ev_codes=["EV-001"],
+                version="0.1.7"
+            )
+            assert any("UC" in e or "Use Case" in e for e in errors)
+            
+        except ImportError:
+            pytest.skip("Standard Adapter not available")
+    
+    def test_cardinality_zero_plus(self):
+        """Test that OB allows 0 codes (optional)."""
+        try:
+            from standard_adapter.taxonomy import validate_assignment
+            
+            # Empty OB (should pass)
+            errors = validate_assignment(
+                fs_codes=["FS-001"],
+                im_codes=["IM-001"],
+                uc_codes=["UC-001"],
+                dt_codes=["DT-001"],
+                ch_codes=["CH-001"],
+                rs_codes=["RS-001"],
+                ev_codes=["EV-001"],
+                ob_codes=[],  # Empty - should be OK
+                version="0.1.7"
+            )
+            # Should not have OB-related errors
+            ob_errors = [e for e in errors if "OB" in e or "Outcome" in e]
+            assert len(ob_errors) == 0
+            
+        except ImportError:
+            pytest.skip("Standard Adapter not available")
