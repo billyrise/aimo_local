@@ -281,3 +281,169 @@ def db_columns_to_dict(
         "EV": parse_json_array(ev_codes_json),
         "OB": parse_json_array(ob_codes_json),
     }
+
+
+def classification_to_db_record(
+    classification: dict,
+    aimo_standard_version: str = "0.1.7"
+) -> dict:
+    """
+    Convert a classification result (from LLM or Rule) to DB record format.
+    
+    Handles both new 8-dimension format and legacy 7-code format.
+    Ensures:
+    - New taxonomy columns are populated with canonical JSON
+    - Legacy columns are populated for backward compatibility
+    - fs_uc_code is set to "DEPRECATED" for new records
+    
+    Args:
+        classification: Classification dict from LLM or RuleClassifier
+        aimo_standard_version: AIMO Standard version
+    
+    Returns:
+        Dict ready for DB upsert with all taxonomy columns
+    
+    Example:
+        >>> classification_to_db_record({
+        ...     "fs_code": "FS-001",
+        ...     "im_code": "IM-001",
+        ...     "uc_codes": ["UC-001", "UC-002"],
+        ...     ...
+        ... })
+        {
+            'fs_code': 'FS-001',
+            'im_code': 'IM-001',
+            'uc_codes_json': '["UC-001","UC-002"]',
+            ...
+            'fs_uc_code': 'DEPRECATED',
+            'dt_code': 'DT-001',  # First element for legacy
+            ...
+        }
+    """
+    result = {}
+    
+    # Check format (new 8-dim vs legacy 7-code)
+    has_new_format = "fs_code" in classification or "uc_codes" in classification
+    
+    if has_new_format:
+        # New 8-dimension format
+        result["fs_code"] = classification.get("fs_code", "")
+        result["im_code"] = classification.get("im_code", "")
+        
+        # Array dimensions - ensure canonical JSON
+        result["uc_codes_json"] = canonical_json_array(classification.get("uc_codes", []))
+        result["dt_codes_json"] = canonical_json_array(classification.get("dt_codes", []))
+        result["ch_codes_json"] = canonical_json_array(classification.get("ch_codes", []))
+        result["rs_codes_json"] = canonical_json_array(classification.get("rs_codes", []))
+        result["ev_codes_json"] = canonical_json_array(classification.get("ev_codes", []))
+        result["ob_codes_json"] = canonical_json_array(classification.get("ob_codes", []))
+        
+        # Schema version
+        result["taxonomy_schema_version"] = classification.get("aimo_standard_version", aimo_standard_version)
+        
+        # Legacy columns for backward compatibility
+        # First element of each array, or empty string
+        uc_codes = classification.get("uc_codes", [])
+        dt_codes = classification.get("dt_codes", [])
+        ch_codes = classification.get("ch_codes", [])
+        rs_codes = classification.get("rs_codes", [])
+        ev_codes = classification.get("ev_codes", [])
+        ob_codes = classification.get("ob_codes", [])
+        
+        result["fs_uc_code"] = "DEPRECATED"  # Prevent misuse
+        result["dt_code"] = dt_codes[0] if dt_codes else ""
+        result["ch_code"] = ch_codes[0] if ch_codes else ""
+        result["rs_code"] = rs_codes[0] if rs_codes else ""
+        result["ob_code"] = ob_codes[0] if ob_codes else ""
+        result["ev_code"] = ev_codes[0] if ev_codes else ""
+        
+    else:
+        # Legacy 7-code format - convert
+        fs_uc = classification.get("fs_uc_code", "")
+        im_code = classification.get("im_code", "")
+        
+        # Try to extract FS from fs_uc_code
+        if fs_uc and fs_uc.startswith("FS-"):
+            result["fs_code"] = fs_uc
+        else:
+            result["fs_code"] = ""
+        
+        result["im_code"] = im_code if im_code else ""
+        
+        # Convert single codes to arrays
+        dt = classification.get("dt_code", "")
+        ch = classification.get("ch_code", "")
+        rs = classification.get("rs_code", "")
+        ob = classification.get("ob_code", "")
+        ev = classification.get("ev_code", "")
+        
+        result["uc_codes_json"] = "[]"  # Not available in legacy
+        result["dt_codes_json"] = canonical_json_array([dt] if dt else [])
+        result["ch_codes_json"] = canonical_json_array([ch] if ch else [])
+        result["rs_codes_json"] = canonical_json_array([rs] if rs else [])
+        result["ev_codes_json"] = canonical_json_array([ev] if ev else [])
+        result["ob_codes_json"] = canonical_json_array([ob] if ob else [])
+        
+        result["taxonomy_schema_version"] = classification.get("taxonomy_version", aimo_standard_version)
+        
+        # Keep legacy columns
+        result["fs_uc_code"] = fs_uc
+        result["dt_code"] = dt
+        result["ch_code"] = ch
+        result["rs_code"] = rs
+        result["ob_code"] = ob
+        result["ev_code"] = ev
+    
+    # Copy non-taxonomy fields
+    for field in [
+        "service_name", "usage_type", "risk_level", "category",
+        "confidence", "rationale_short", "classification_source",
+        "signature_version", "rule_version", "prompt_version", "model"
+    ]:
+        if field in classification:
+            result[field] = classification[field]
+    
+    # Handle legacy taxonomy_version -> taxonomy_schema_version
+    if "taxonomy_version" in classification and "taxonomy_schema_version" not in result:
+        result["taxonomy_schema_version"] = classification["taxonomy_version"]
+    
+    return result
+
+
+def needs_taxonomy_review(classification: dict) -> bool:
+    """
+    Check if a classification needs manual review due to taxonomy issues.
+    
+    Args:
+        classification: Classification dict
+    
+    Returns:
+        True if needs review (missing required codes, validation errors, etc.)
+    """
+    # Check for explicit review flag
+    if classification.get("_needs_review"):
+        return True
+    
+    # Check new format completeness
+    if "fs_code" in classification:
+        # New format
+        if not classification.get("fs_code"):
+            return True
+        if not classification.get("im_code"):
+            return True
+        if not classification.get("uc_codes"):
+            return True
+        if not classification.get("dt_codes"):
+            return True
+        if not classification.get("ch_codes"):
+            return True
+        if not classification.get("rs_codes"):
+            return True
+        if not classification.get("ev_codes"):
+            return True
+    else:
+        # Legacy format - check key fields
+        if not classification.get("fs_uc_code") and not classification.get("im_code"):
+            return True
+    
+    return False
