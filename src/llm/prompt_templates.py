@@ -195,6 +195,35 @@ def get_json_schema_for_prompt(aimo_standard_version: str = DEFAULT_AIMO_STANDAR
 }}"""
 
 
+def _format_cardinality(cardinality: dict) -> str:
+    """
+    Format cardinality dict to human-readable string.
+    
+    Args:
+        cardinality: dict with 'min', 'max' keys (max can be None for unlimited)
+    
+    Returns:
+        Human-readable cardinality string:
+        - min=1, max=1 → "exactly 1"
+        - min=1, max=None → "1+"
+        - min=0, max=None → "0+"
+        - other combinations → "custom(min=X,max=Y)"
+    """
+    min_val = cardinality.get("min", 0)
+    max_val = cardinality.get("max")  # None means unlimited
+    
+    if min_val == 1 and max_val == 1:
+        return "exactly 1"
+    elif min_val == 1 and max_val is None:
+        return "1+"
+    elif min_val == 0 and max_val is None:
+        return "0+"
+    else:
+        # Custom/unexpected combination - display safely
+        max_str = str(max_val) if max_val is not None else "∞"
+        return f"custom(min={min_val},max={max_str})"
+
+
 def get_taxonomy_codes_section(version: str = DEFAULT_AIMO_STANDARD_VERSION) -> str:
     """
     Get taxonomy codes section for prompt from Standard Adapter.
@@ -217,25 +246,11 @@ def get_taxonomy_codes_section(version: str = DEFAULT_AIMO_STANDARD_VERSION) -> 
             codes = adapter.get_allowed_codes(dim)
             cardinality = adapter.get_cardinality(dim)
             
-            # Format cardinality for display
-            if cardinality == "exactly_one":
-                card_str = "exactly 1"
-            elif cardinality == "one_or_more":
-                card_str = "1+"
-            else:
-                card_str = "0+"
+            # Format cardinality dict to display string
+            card_str = _format_cardinality(cardinality)
             
-            # Get dimension label
-            dim_labels = {
-                "FS": "Functional Scope",
-                "IM": "Integration Mode",
-                "UC": "Use Case Class",
-                "DT": "Data Type",
-                "CH": "Channel",
-                "RS": "Risk Surface",
-                "EV": "Evidence Type",
-                "OB": "Outcome/Benefit"
-            }
+            # Get dimension label from cardinality dict or use fallback
+            dim_label = cardinality.get("name", dim)
             
             # Format codes with labels
             code_lines = []
@@ -246,7 +261,7 @@ def get_taxonomy_codes_section(version: str = DEFAULT_AIMO_STANDARD_VERSION) -> 
                 else:
                     code_lines.append(f"  - {code}")
             
-            section = f"### {dim} ({dim_labels.get(dim, dim)}) [{card_str}]\n" + "\n".join(code_lines)
+            section = f"### {dim} ({dim_label}) [{card_str}]\n" + "\n".join(code_lines)
             sections.append(section)
         
         return "\n\n".join(sections)
