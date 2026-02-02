@@ -332,6 +332,56 @@ def sync_aimo_standard(
     return manifest
 
 
+def verify_against_pin(manifest: dict, version: str) -> tuple[bool, list[str]]:
+    """
+    Verify synced manifest against pinned values.
+    
+    This ensures we're syncing exactly what's expected.
+    If pinning verification fails, the sync should be rejected.
+    
+    Returns:
+        (passed, error_messages)
+    """
+    # Import pinning from src
+    project_root = get_project_root()
+    sys.path.insert(0, str(project_root / "src"))
+    
+    try:
+        from standard_adapter.pinning import (
+            PINNED_STANDARD_VERSION,
+            PINNED_STANDARD_COMMIT,
+            PINNED_ARTIFACTS_DIR_SHA256,
+        )
+    except ImportError:
+        # Pinning module not available, skip verification
+        return True, []
+    
+    errors = []
+    
+    # Only verify for the pinned version
+    if version != PINNED_STANDARD_VERSION:
+        # Not the pinned version, skip verification
+        return True, []
+    
+    # Check commit
+    commit = manifest.get("commit", "")
+    if commit and not commit.startswith(PINNED_STANDARD_COMMIT[:12]):
+        errors.append(
+            f"Commit mismatch: expected '{PINNED_STANDARD_COMMIT[:12]}...', "
+            f"got '{commit[:12]}...'. Tag may have been mutated!"
+        )
+    
+    # Check directory SHA
+    dir_sha = manifest.get("directory_sha256", "")
+    if dir_sha and dir_sha != PINNED_ARTIFACTS_DIR_SHA256:
+        errors.append(
+            f"Artifacts SHA mismatch: expected '{PINNED_ARTIFACTS_DIR_SHA256[:16]}...', "
+            f"got '{dir_sha[:16]}...'. Artifacts may have been modified!"
+        )
+    
+    return len(errors) == 0, errors
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Sync AIMO Standard submodule to a specific version"
@@ -356,6 +406,11 @@ def main():
         action="store_true",
         help="Output manifest as JSON"
     )
+    parser.add_argument(
+        "--skip-pin-check",
+        action="store_true",
+        help="Skip pinning verification (ONLY for upgrade scripts)"
+    )
     
     args = parser.parse_args()
     
@@ -371,6 +426,21 @@ def main():
     
     if "error" in manifest:
         sys.exit(1)
+    
+    # Verify against pinned values (unless skipped)
+    if not args.skip_pin_check:
+        passed, errors = verify_against_pin(manifest, args.version)
+        if not passed:
+            print("", file=sys.stderr)
+            print("=" * 70, file=sys.stderr)
+            print("PINNING VERIFICATION FAILED", file=sys.stderr)
+            print("=" * 70, file=sys.stderr)
+            for error in errors:
+                print(f"  - {error}", file=sys.stderr)
+            print("", file=sys.stderr)
+            print("See: docs/PLAYBOOK_AIMO_STANDARD_UPGRADE.md", file=sys.stderr)
+            print("=" * 70, file=sys.stderr)
+            sys.exit(2)
     
     return manifest
 

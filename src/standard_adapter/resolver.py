@@ -213,7 +213,8 @@ def resolve_standard_artifacts(
     version: str = AIMO_STANDARD_VERSION_DEFAULT,
     submodule_path: str = AIMO_STANDARD_SUBMODULE_PATH,
     cache_dir: str = AIMO_STANDARD_CACHE_DIR_DEFAULT,
-    force_sync: bool = False
+    force_sync: bool = False,
+    skip_pinning_check: bool = False
 ) -> ResolvedStandardArtifacts:
     """
     Resolve AIMO Standard artifacts for a specific version.
@@ -222,18 +223,31 @@ def resolve_standard_artifacts(
     It ensures the submodule is at the correct version and syncs
     artifacts to the local cache.
     
+    IMPORTANT: By default, this function enforces pinning verification.
+    If the resolved artifacts don't match the pinned values, a
+    StandardPinningError is raised to prevent accidental version drift.
+    
     Args:
         version: Target version (e.g., "0.1.7")
         submodule_path: Relative path to submodule from project root
         cache_dir: Base cache directory
         force_sync: If True, force resync even if cache exists
+        skip_pinning_check: If True, skip pinning verification
+            (ONLY use in upgrade scripts, never in production)
     
     Returns:
         ResolvedStandardArtifacts with paths and checksums
     
     Raises:
         RuntimeError: If submodule initialization or checkout fails
+        StandardPinningError: If pinning verification fails
     """
+    from .pinning import (
+        enforce_pinning,
+        PINNED_STANDARD_VERSION,
+        StandardPinningError,
+    )
+    
     project_root = get_project_root()
     full_submodule_path = project_root / submodule_path
     cache_base = Path(os.path.expanduser(cache_dir))
@@ -253,7 +267,7 @@ def resolve_standard_artifacts(
     if zip_path.exists():
         zip_sha256 = calculate_file_sha256(zip_path)
     
-    return ResolvedStandardArtifacts(
+    resolved = ResolvedStandardArtifacts(
         standard_version=version,
         standard_commit=commit_hash,
         standard_tag=tag_name,
@@ -264,6 +278,14 @@ def resolve_standard_artifacts(
         artifacts_zip_sha256=zip_sha256,
         manifest=manifest
     )
+    
+    # Step 5: Enforce pinning verification (critical for audit reproducibility)
+    if not skip_pinning_check:
+        # Only verify if resolving the pinned version
+        if version == PINNED_STANDARD_VERSION:
+            enforce_pinning(resolved)
+    
+    return resolved
 
 
 def get_cached_artifacts(
