@@ -1,0 +1,3 @@
+Timestamp,User,Url,ActionType
+2024-01-17T10:00:00Z,user001@example.com,,Allowed
+INVALID_TIMESTAMP,user002@example.com,https://www.example.com,Blocked

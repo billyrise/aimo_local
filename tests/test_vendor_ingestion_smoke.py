@@ -39,21 +39,21 @@ class TestVendorIngestionSmoke:
     def test_vendor_has_sample_logs(self, vendor):
         """Each vendor should have sample logs in sample_logs/<vendor>/."""
         sample_dir = Path(__file__).parent.parent / "sample_logs" / vendor
-        normal_log = sample_dir / "normal.csv"
-        abnormal_log = sample_dir / "abnormal.csv"
+        normal_log = sample_dir / "normal_01.csv"
+        invalid_log = sample_dir / "invalid_01.csv"
         
         # At least normal log should exist
         assert normal_log.exists(), f"Normal sample log missing for {vendor}: {normal_log}"
         
-        # Abnormal log is optional (for testing exclusion handling)
-        if not abnormal_log.exists():
-            pytest.skip(f"Abnormal sample log not found for {vendor} (optional)")
+        # Invalid log is optional (for testing exclusion handling)
+        if not invalid_log.exists():
+            pytest.skip(f"Invalid sample log not found for {vendor} (optional)")
     
     @pytest.mark.parametrize("vendor", SUPPORTED_VENDORS)
     def test_normal_log_ingestion(self, vendor, tmp_path):
         """Normal log should be ingested successfully."""
         sample_dir = Path(__file__).parent.parent / "sample_logs" / vendor
-        normal_log = sample_dir / "normal.csv"
+        normal_log = sample_dir / "normal_01.csv"
         
         if not normal_log.exists():
             pytest.skip(f"Normal sample log not found for {vendor}")
@@ -85,13 +85,13 @@ class TestVendorIngestionSmoke:
                 f"{vendor}: Missing URL/destination fields"
     
     @pytest.mark.parametrize("vendor", SUPPORTED_VENDORS)
-    def test_abnormal_log_exclusion(self, vendor):
-        """Abnormal log should be excluded with reason in report."""
+    def test_invalid_log_exclusion(self, vendor):
+        """Invalid log should be excluded with reason in report."""
         sample_dir = Path(__file__).parent.parent / "sample_logs" / vendor
-        abnormal_log = sample_dir / "abnormal.csv"
+        invalid_log = sample_dir / "invalid_01.csv"
         
-        if not abnormal_log.exists():
-            pytest.skip(f"Abnormal sample log not found for {vendor} (optional)")
+        if not invalid_log.exists():
+            pytest.skip(f"Invalid sample log not found for {vendor} (optional)")
         
         # Initialize ingestor
         ingestor = BaseIngestor(vendor)
@@ -101,12 +101,12 @@ class TestVendorIngestionSmoke:
         parse_errors = []
         
         try:
-            for event in ingestor.ingest_file(str(abnormal_log)):
+            for event in ingestor.ingest_file(str(invalid_log)):
                 events.append(event)
         except Exception as e:
             parse_errors.append(str(e))
         
-        # Abnormal log may:
+        # Invalid log may:
         # 1. Produce 0 events (excluded)
         # 2. Produce events with warnings
         # 3. Raise parse errors (should be caught and logged)
@@ -114,20 +114,22 @@ class TestVendorIngestionSmoke:
         # If events are produced, they should still be valid canonical events
         for event in events:
             assert "event_time" in event or "timestamp" in event, \
-                f"{vendor}: Abnormal log produced invalid event (missing event_time)"
+                f"{vendor}: Invalid log produced invalid event (missing event_time)"
     
     def test_paloalto_sample_exists(self):
         """Palo Alto sample should exist (baseline)."""
         sample_file = Path(__file__).parent.parent / "sample_logs" / "paloalto_sample.csv"
         assert sample_file.exists(), "Palo Alto sample log missing (baseline)"
     
-    @pytest.mark.parametrize("vendor", ["paloalto", "zscaler", "netskope"])
+    @pytest.mark.parametrize("vendor", SUPPORTED_VENDORS)
     def test_e2e_vendor_processing(self, vendor, tmp_path):
-        """E2E test: Ingest → Normalize → Signature for major vendors."""
+        """E2E test: Ingest → Normalize → Signature → Report for all vendors."""
         sample_dir = Path(__file__).parent.parent / "sample_logs" / vendor
         
-        # Try normal.csv first, fallback to <vendor>_sample.csv
-        normal_log = sample_dir / "normal.csv"
+        # Try normal_01.csv first, fallback to normal.csv or <vendor>_sample.csv
+        normal_log = sample_dir / "normal_01.csv"
+        if not normal_log.exists():
+            normal_log = sample_dir / "normal.csv"
         if not normal_log.exists():
             normal_log = Path(__file__).parent.parent / "sample_logs" / f"{vendor}_sample.csv"
         
@@ -174,3 +176,8 @@ class TestVendorIngestionSmoke:
         for sig in signatures:
             assert isinstance(sig, str), f"{vendor}: Signature should be string"
             assert len(sig) > 0, f"{vendor}: Signature should not be empty"
+        
+        # E2E: Verify report generation would succeed (minimal check)
+        # This ensures the full pipeline can run without errors
+        assert len(events) > 0, f"{vendor}: E2E test requires at least one event"
+        assert len(signatures) > 0, f"{vendor}: E2E test requires at least one signature"

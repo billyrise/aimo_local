@@ -185,6 +185,10 @@
           "type": "integer",
           "description": "Number of signatures marked as needs_review"
         },
+        "failed_permanent_count": {
+          "type": "integer",
+          "description": "Number of signatures with permanent failure status"
+        },
         "cache_hit_rate": {
           "type": "number",
           "minimum": 0,
@@ -250,6 +254,38 @@
     "prompt_version": {
       "type": "string",
       "description": "Prompt version used"
+    },
+    "code_version": {
+      "type": "string",
+      "description": "Code version (git commit hash or 'unknown')"
+    },
+    "input_manifest_hash": {
+      "type": "string",
+      "description": "Hash of input file manifest (file_hash + vendor + min/max_time)"
+    },
+    "input_files_summary": {
+      "type": "object",
+      "description": "Summary of input files processed",
+      "properties": {
+        "file_count": {
+          "type": "integer",
+          "description": "Number of input files"
+        },
+        "total_size_bytes": {
+          "type": "integer",
+          "description": "Total size of input files in bytes"
+        },
+        "earliest_time": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "Earliest event time across all input files"
+        },
+        "latest_time": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "Latest event time across all input files"
+        }
+      }
     }
   }
 }

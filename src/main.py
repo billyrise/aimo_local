@@ -12,19 +12,18 @@ import os
 import argparse
 from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import hashlib
 import json
 import warnings
 import shutil
 from dotenv import load_dotenv
 
-# File locking for process-level duplicate execution prevention
-try:
-    from filelock import FileLock, Timeout
-    FILELOCK_AVAILABLE = True
-except ImportError:
-    FILELOCK_AVAILABLE = False
+# Lock directory path (unified with ops/bin/run_aimo.sh)
+# Lock is managed via directory creation (atomic mkdir)
+LOCK_STATE_DIR = Path(__file__).parent.parent / "ops" / "state"
+LOCK_DIR = LOCK_STATE_DIR / "aimo.engine.lock.d"
+PID_FILE = LOCK_STATE_DIR / "aimo.engine.pid"
 
 # Suppress urllib3 SSL warnings for LibreSSL compatibility
 # urllib3 1.x works with LibreSSL, but may show warnings in some environments
@@ -64,6 +63,7 @@ from orchestrator import Orchestrator, RunContext
 from orchestrator.file_stabilizer import FileStabilizer
 from orchestrator.metrics import MetricsRecorder
 from orchestrator.jsonl_logger import JSONLLogger
+from utils.git_version import get_code_version
 
 
 def compute_run_id(input_file: str, signature_version: str = "1.0") -> str:
@@ -101,7 +101,7 @@ def compute_run_id(input_file: str, signature_version: str = "1.0") -> str:
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(description="AIMO Analysis Engine - E2E Pipeline")
-    parser.add_argument("input_file", nargs="?", help="Path to input log file (optional if --use-box-sync)")
+    parser.add_argument("input_file", nargs="?", help="Path to input log file (optional, for re-run with existing work directory)")
     parser.add_argument("--vendor", default="paloalto", 
                        help="Vendor name (default: paloalto)")
     parser.add_argument("--db-path", default="./data/cache/aimo.duckdb",
@@ -112,26 +112,81 @@ def main():
                        help="Enable user×signature dimension for A/B/C detection")
     parser.add_argument("--skip-lock", action="store_true",
                        help="Skip process-level locking (use only if called from wrapper script)")
-    parser.add_argument("--use-box-sync", action="store_true",
-                       help="Use Box sync file stabilization (detect files from config/box_sync.yaml)")
     
     args = parser.parse_args()
     
     # Process-level locking (prevent duplicate execution)
     # Note: If called from ops/bin/run_aimo.sh, the wrapper script already handles locking
     # This is a fallback for direct execution
-    if not args.skip_lock and FILELOCK_AVAILABLE:
-        db_path = Path(args.db_path)
-        lock_file = db_path.parent / "aimo.lock"
-        lock_file.parent.mkdir(parents=True, exist_ok=True)
+    # Uses directory lock (mkdir) to match ops/bin/run_aimo.sh
+    lock_acquired = False
+    if not args.skip_lock:
+        LOCK_STATE_DIR.mkdir(parents=True, exist_ok=True)
         
-        lock = FileLock(str(lock_file), timeout=1)  # Non-blocking: fail immediately if locked
+        # Try to acquire lock (atomic mkdir)
         try:
-            lock.acquire()
-        except Timeout:
-            print(f"ERROR: Another AIMO process is already running (lock file: {lock_file})", file=sys.stderr)
-            print("       If this is incorrect, remove the lock file manually.", file=sys.stderr)
-            sys.exit(1)
+            LOCK_DIR.mkdir(exist_ok=False)  # Will raise FileExistsError if already exists
+            lock_acquired = True
+            
+            # Write PID file
+            try:
+                PID_FILE.write_text(str(os.getpid()))
+            except Exception:
+                pass  # Ignore PID file write errors
+            
+            # Register cleanup on exit
+            import atexit
+            def cleanup_lock():
+                try:
+                    if LOCK_DIR.exists():
+                        shutil.rmtree(LOCK_DIR)
+                    if PID_FILE.exists():
+                        PID_FILE.unlink()
+                except Exception:
+                    pass
+            atexit.register(cleanup_lock)
+            
+        except FileExistsError:
+            # Lock already exists - check if process is still running
+            pid = None
+            if PID_FILE.exists():
+                try:
+                    pid = int(PID_FILE.read_text().strip())
+                except Exception:
+                    pass
+            
+            if pid and _is_process_running(pid):
+                print(f"ERROR: Another AIMO process is already running (PID: {pid}, lock: {LOCK_DIR})", file=sys.stderr)
+                print("       If this is incorrect, remove the lock directory manually.", file=sys.stderr)
+                sys.exit(1)
+            else:
+                # Stale lock - remove it and retry
+                print(f"WARNING: Stale lock detected, removing and retrying...", file=sys.stderr)
+                try:
+                    if LOCK_DIR.exists():
+                        shutil.rmtree(LOCK_DIR)
+                    if PID_FILE.exists():
+                        PID_FILE.unlink()
+                    
+                    # Retry lock acquisition
+                    LOCK_DIR.mkdir(exist_ok=False)
+                    lock_acquired = True
+                    PID_FILE.write_text(str(os.getpid()))
+                    
+                    import atexit
+                    def cleanup_lock():
+                        try:
+                            if LOCK_DIR.exists():
+                                shutil.rmtree(LOCK_DIR)
+                            if PID_FILE.exists():
+                                PID_FILE.unlink()
+                        except Exception:
+                            pass
+                    atexit.register(cleanup_lock)
+                except Exception as e:
+                    print(f"ERROR: Failed to acquire lock: {e}", file=sys.stderr)
+                    print("       Another process may be starting. Please wait and retry.", file=sys.stderr)
+                    sys.exit(1)
         except Exception as e:
             print(f"WARNING: Failed to acquire lock: {e}", file=sys.stderr)
             print("         Continuing without lock (not recommended for production)", file=sys.stderr)
@@ -140,11 +195,24 @@ def main():
         _main_internal(args)
     finally:
         # Release lock on exit
-        if not args.skip_lock and FILELOCK_AVAILABLE:
+        if lock_acquired:
             try:
-                lock.release()
+                if LOCK_DIR.exists():
+                    shutil.rmtree(LOCK_DIR)
+                if PID_FILE.exists():
+                    PID_FILE.unlink()
             except Exception:
                 pass  # Ignore errors during cleanup
+
+
+def _is_process_running(pid: int) -> bool:
+    """Check if a process with given PID is running."""
+    try:
+        # Use os.kill with signal 0 to check if process exists
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
 
 
 def _main_internal(args):
@@ -164,13 +232,54 @@ def _main_internal(args):
         work_base_dir=work_base_dir
     )
     
-    # Handle input file detection and stabilization
-    input_files = []
+    # Phase 17: Initialize JSONL logger (needed for file stabilization audit logs)
+    logs_dir = Path(args.output_dir).parent / "logs"
+    jsonl_logger = JSONLLogger(logs_dir)
     
-    if args.use_box_sync:
-        # Phase 11: Box sync file stabilization
-        print("Using Box sync file stabilization...")
-        stabilizer = FileStabilizer()
+    # Handle input file detection and stabilization
+    # Box sync is now mandatory (P0: prevent incomplete file processing)
+    input_files = []
+    temp_work_dir = None
+    use_box_sync = True  # Always use Box sync by default
+    
+    # Initialize file stabilizer with JSONL logger for audit logging
+    stabilizer = FileStabilizer(jsonl_logger=jsonl_logger)
+    
+    # Exception case: If input_file is specified and it's in data/work/, use it directly (re-run scenario)
+    if args.input_file:
+        input_path = Path(args.input_file)
+        if input_path.exists():
+            # Check if it's in work directory (already processed)
+            try:
+                input_path_abs = str(input_path.resolve())
+                work_base_abs = str(work_base_dir.resolve())
+                if input_path_abs.startswith(work_base_abs):
+                    # File is in work directory - use directly (re-run case)
+                    print(f"Using existing work directory file: {input_path}")
+                    input_files = [input_path]
+                    use_box_sync = False  # Skip Box sync for re-run
+                else:
+                    # File is outside work directory - prepare it (stabilize if in data/input, copy otherwise)
+                    # This handles the case where user specifies a file in data/input directly
+                    print(f"Preparing input file: {input_path}")
+                    # We need a temporary work dir to prepare the file before computing run_id
+                    temp_work_dir = work_base_dir / "temp_stabilization"
+                    temp_work_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    prepared_path = stabilizer.prepare_input_file(input_path, temp_work_dir)
+                    if prepared_path:
+                        input_files = [prepared_path]
+                        use_box_sync = False  # Skip Box sync, file is already prepared
+                    else:
+                        print(f"Error: Failed to prepare input file: {input_path}", file=sys.stderr)
+                        sys.exit(1)
+            except Exception as e:
+                print(f"Warning: Error checking input file path: {e}, using Box sync", file=sys.stderr)
+    
+    # Default: Box sync file stabilization (mandatory)
+    if use_box_sync:
+        # Phase 7-2: Box sync file stabilization (always enabled)
+        print("Using Box sync file stabilization (mandatory)...")
         
         # Step 1: Find input files in sync folder
         sync_input_files = stabilizer.find_input_files()
@@ -189,7 +298,9 @@ def _main_internal(args):
         copied_files = []
         for sync_file in sync_input_files:
             print(f"Stabilizing: {sync_file.name}")
-            copied_path = stabilizer.stabilize_and_copy(sync_file, temp_work_dir)
+            # Note: run_id is not available yet (will be computed from stabilized files)
+            # Audit log will have run_id=None for now, but will be updated later
+            copied_path = stabilizer.stabilize_and_copy(sync_file, temp_work_dir, run_id=None)
             if copied_path:
                 copied_files.append(copied_path)
             else:
@@ -204,25 +315,13 @@ def _main_internal(args):
         # Step 3: Compute run_id from stabilized files
         # Use copied files to compute run_id (deterministic)
         input_files = copied_files
-    else:
-        # Legacy mode: use provided input_file
-        if not args.input_file:
-            print("Error: input_file is required when --use-box-sync is not specified", file=sys.stderr)
-            sys.exit(1)
-        
-        input_path = Path(args.input_file)
-        if not input_path.exists():
-            print(f"Error: Input file not found: {args.input_file}", file=sys.stderr)
-            sys.exit(1)
-        
-        input_files = [input_path]
     
     # Get or create run context (idempotent)
     # This computes run_id from input_files (stabilized files for Box sync mode)
     run_context = orchestrator.get_or_create_run(input_files)
     
     # If using Box sync, move files from temp_stabilization to actual run_id directory
-    if args.use_box_sync:
+    if use_box_sync and temp_work_dir:
         actual_work_dir = run_context.work_dir
         raw_dir = actual_work_dir / "raw"
         raw_dir.mkdir(parents=True, exist_ok=True)
@@ -246,6 +345,16 @@ def _main_internal(args):
         # Update input_files to point to actual work directory
         input_files = list(raw_dir.iterdir())
         input_files = [f for f in input_files if f.is_file()]
+    elif not use_box_sync:
+        # Re-run case: Update input_files to point to actual work directory
+        actual_work_dir = run_context.work_dir
+        raw_dir = actual_work_dir / "raw"
+        if raw_dir.exists():
+            input_files = [f for f in raw_dir.iterdir() if f.is_file()]
+        else:
+            # Fallback to original input_file if raw dir doesn't exist
+            if args.input_file:
+                input_files = [Path(args.input_file)]
     
     # Use first input file for processing (or all files if multi-file support is needed)
     input_path = input_files[0] if input_files else None
@@ -254,7 +363,7 @@ def _main_internal(args):
         sys.exit(1)
     
     print(f"Run ID: {run_context.run_id}")
-    print(f"Input file: {args.input_file}")
+    print(f"Input file: {input_path if 'input_path' in locals() else (args.input_file if args.input_file else 'Box sync')}")
     print(f"Vendor: {args.vendor}")
     print(f"Last completed stage: {run_context.last_completed_stage}")
     print()
@@ -279,9 +388,7 @@ def _main_internal(args):
     # Initialize metrics recorder
     metrics_recorder = MetricsRecorder(db_client, run_context.run_id)
     
-    # Phase 17: Initialize JSONL logger
-    logs_dir = Path(args.output_dir).parent / "logs"
-    jsonl_logger = JSONLLogger(logs_dir)
+    # JSONL logger is already initialized above (needed for file stabilization audit logs)
     
     # Log run start
     input_file_paths = [str(f) for f in input_files]
@@ -299,7 +406,7 @@ def _main_internal(args):
     # Stage 1: Ingestion
     if not orchestrator.should_skip_stage(Orchestrator.STAGE_1_INGESTION):
         with metrics_recorder.record_stage(MetricsRecorder.STAGE_INGEST):
-            canonical_events, event_count, pii_count = _stage_1_ingestion(
+            canonical_events, event_count, pii_count, min_time, max_time = _stage_1_ingestion(
                 orchestrator, ingestor, input_path
             )
             
@@ -333,7 +440,7 @@ def _main_internal(args):
         print("Stage 1: Ingestion (skipped - already completed)")
         # Load from work directory or reconstruct from DB if needed
         # For now, we'll re-ingest (can be optimized later)
-        canonical_events, event_count, pii_count = _stage_1_ingestion(
+        canonical_events, event_count, pii_count, min_time, max_time = _stage_1_ingestion(
             orchestrator, ingestor, input_path
         )
         print()
@@ -382,7 +489,8 @@ def _main_internal(args):
         with metrics_recorder.record_stage(MetricsRecorder.STAGE_ABC_CACHE, row_count=event_count):
             abc_results, event_flags, signals, metadata, count_a, count_b, count_c, thresholds, cache_hit_count = _stage_2b_2c_abc_cache(
                 orchestrator, canonical_events, signatures, abc_detector, db_client, 
-                signature_builder, input_path, args.vendor, ingestor, event_count, signature_count
+                signature_builder, input_path, args.vendor, ingestor, event_count, signature_count,
+                min_time=min_time, max_time=max_time
             )
         
         # Record A/B/C counts
@@ -708,17 +816,48 @@ def _stage_1_ingestion(orchestrator: Orchestrator, ingestor: BaseIngestor, input
     canonical_events = []
     pii_count = 0  # Track PII detections
     
+    # Track min/max time for input_files table
+    min_time = None
+    max_time = None
+    
     for event in ingestor.ingest_file(str(input_path)):
         canonical_events.append(event)
         event_count += 1
+        
+        # Track min/max time
+        event_time = event.get("event_time")
+        if event_time:
+            try:
+                # Parse ISO-8601 datetime string
+                if isinstance(event_time, str):
+                    dt = datetime.fromisoformat(event_time.replace('Z', '+00:00'))
+                elif isinstance(event_time, datetime):
+                    dt = event_time
+                else:
+                    dt = None
+                
+                if dt:
+                    # Convert to UTC naive datetime if timezone-aware
+                    if dt.tzinfo is not None:
+                        from dateutil.tz import UTC
+                        dt = dt.astimezone(UTC).replace(tzinfo=None)
+                    
+                    if min_time is None or dt < min_time:
+                        min_time = dt
+                    if max_time is None or dt > max_time:
+                        max_time = dt
+            except Exception:
+                pass  # Skip invalid timestamps
         
         if event_count % 1000 == 0:
             print(f"  Processed {event_count} events...")
     
     print(f"  Ingested {event_count} events (rows_in: {event_count})")
+    if min_time and max_time:
+        print(f"  Time range: {min_time.isoformat()} to {max_time.isoformat()}")
     print()
     
-    return canonical_events, event_count, pii_count
+    return canonical_events, event_count, pii_count, min_time, max_time
 
 
 def _stage_1_write_parquet(orchestrator: Orchestrator, parquet_writer: ParquetWriter,
@@ -780,7 +919,8 @@ def _stage_2_normalization(orchestrator: Orchestrator, canonical_events: list,
 def _stage_2b_2c_abc_cache(orchestrator: Orchestrator, canonical_events: list, signatures: dict,
                            abc_detector: ABCDetector, db_client: DuckDBClient,
                            signature_builder: SignatureBuilder, input_path: Path,
-                           vendor: str, ingestor: BaseIngestor, event_count: int, signature_count: int):
+                           vendor: str, ingestor: BaseIngestor, event_count: int, signature_count: int,
+                           min_time: Optional[datetime] = None, max_time: Optional[datetime] = None):
     """Stage 2b: A/B/C Extraction & Stage 2c: Cache"""
     run_context = orchestrator.current_run
     
@@ -836,10 +976,12 @@ def _stage_2b_2c_abc_cache(orchestrator: Orchestrator, canonical_events: list, s
     # Stage 2c: Cache (DuckDB)
     print("Stage 2c: Cache (DuckDB)...")
     
-    # Record input file
+    # Record input file (Phase 7-3: Complete audit fields)
     file_hash = hashlib.sha256(open(input_path, 'rb').read()).hexdigest()
     file_id = hashlib.sha256(f"{input_path}|{input_path.stat().st_size}|{input_path.stat().st_mtime}".encode()).hexdigest()
-    db_client.upsert("input_files", {
+    
+    # Prepare input_files record with all required fields
+    input_file_record = {
         "file_id": file_id,
         "run_id": run_context.run_id,
         "file_path": str(input_path),
@@ -847,8 +989,29 @@ def _stage_2b_2c_abc_cache(orchestrator: Orchestrator, canonical_events: list, s
         "file_hash": file_hash,
         "vendor": vendor,
         "log_type": ingestor.mapping.get("event_type", "unknown"),
-        "row_count": event_count
-    }, conflict_key="file_id")
+        "row_count": event_count,  # Actual row count (used as row_count_estimate)
+        "ingested_at": datetime.utcnow().isoformat()
+    }
+    
+    # Add min_time and max_time if available
+    if min_time:
+        input_file_record["min_time"] = min_time.isoformat()
+    if max_time:
+        input_file_record["max_time"] = max_time.isoformat()
+    
+    db_client.upsert("input_files", input_file_record, conflict_key="file_id")
+    
+    # Phase 7-3: Recompute input_manifest_hash with vendor, min/max_time after ingestion
+    # This ensures the final hash includes all audit fields
+    db_client.flush()  # Ensure input_files is written before querying
+    final_input_manifest_hash = orchestrator.compute_input_manifest_hash_from_db(run_context.run_id)
+    if final_input_manifest_hash:
+        db_client.update("runs", {
+            "input_manifest_hash": final_input_manifest_hash
+        }, where_clause="run_id = ?", where_values=[run_context.run_id])
+        db_client.flush()
+        # Update run_context for reporting
+        run_context.input_manifest_hash = final_input_manifest_hash
     
     # Store signature stats with candidate_flags from A/B/C detection
     # Build map from lineage_hash to candidate_flags
@@ -906,11 +1069,11 @@ def _stage_2b_2c_abc_cache(orchestrator: Orchestrator, canonical_events: list, s
     db_client.flush()
     
     # Count cache hits (signatures that already exist in analysis_cache)
-    import time
-    time.sleep(0.2)  # Wait for writer thread
+    # Use reader connection for read-only query (Writer Queue is for writes only)
     cache_hit_count = 0
     try:
-        existing_sigs = db_client._writer_conn.execute(
+        reader = db_client.get_reader()
+        existing_sigs = reader.execute(
             "SELECT url_signature FROM analysis_cache"
         ).fetchall()
         existing_sig_set = {row[0] for row in existing_sigs}
@@ -1012,6 +1175,7 @@ def _stage_3_rule_classification(orchestrator: Orchestrator, db_client: DuckDBCl
     # This ensures signature_stats has 7 codes for Evidence Pack generation
     print("  Updating signature_stats with taxonomy codes from analysis_cache...")
     # DuckDB UPDATE ... FROM syntax (DuckDB supports UPDATE ... FROM)
+    # P0: Use Writer Queue for all DB writes
     update_query = """
     UPDATE signature_stats
     SET 
@@ -1029,9 +1193,9 @@ def _stage_3_rule_classification(orchestrator: Orchestrator, db_client: DuckDBCl
         AND ac.status = 'active'
     """
     try:
-        if db_client._writer_conn:
-            db_client._writer_conn.execute(update_query, [orchestrator.taxonomy_version, run_context.run_id])
-            db_client._writer_conn.commit()
+        # Use Writer Queue (execute_sql) instead of direct connection
+        db_client.execute_sql(update_query, [orchestrator.taxonomy_version, run_context.run_id])
+        db_client.flush()
     except Exception as e:
         # If UPDATE ... FROM fails, try alternative approach (individual updates)
         print(f"  WARNING: UPDATE ... FROM failed, trying alternative approach: {e}", flush=True)
@@ -1050,9 +1214,9 @@ def _stage_3_rule_classification(orchestrator: Orchestrator, db_client: DuckDBCl
                 taxonomy_version = COALESCE((SELECT taxonomy_version FROM analysis_cache WHERE url_signature = signature_stats.url_signature AND status = 'active' LIMIT 1), ?)
             WHERE run_id = ?
             """
-            if db_client._writer_conn:
-                db_client._writer_conn.execute(alt_query, [orchestrator.taxonomy_version, run_context.run_id])
-                db_client._writer_conn.commit()
+            # Use Writer Queue (execute_sql) instead of direct connection
+            db_client.execute_sql(alt_query, [orchestrator.taxonomy_version, run_context.run_id])
+            db_client.flush()
         except Exception as e2:
             print(f"  WARNING: Alternative UPDATE approach also failed: {e2}", flush=True)
             print(f"  Continuing without taxonomy code update (Evidence Pack may have NULL values)", flush=True)
@@ -1296,6 +1460,7 @@ def _stage_4_llm_analysis(orchestrator: Orchestrator, db_client: DuckDBClient,
     # This ensures signature_stats has 7 codes for Evidence Pack generation (after LLM analysis)
     print("  Updating signature_stats with taxonomy codes from analysis_cache (after LLM)...")
     # DuckDB UPDATE ... FROM syntax (DuckDB supports UPDATE ... FROM)
+    # P0: Use Writer Queue for all DB writes
     update_query = """
     UPDATE signature_stats
     SET 
@@ -1313,9 +1478,9 @@ def _stage_4_llm_analysis(orchestrator: Orchestrator, db_client: DuckDBClient,
         AND ac.status = 'active'
     """
     try:
-        if db_client._writer_conn:
-            db_client._writer_conn.execute(update_query, [orchestrator.taxonomy_version, run_context.run_id])
-            db_client._writer_conn.commit()
+        # Use Writer Queue (execute_sql) instead of direct connection
+        db_client.execute_sql(update_query, [orchestrator.taxonomy_version, run_context.run_id])
+        db_client.flush()
     except Exception as e:
         # If UPDATE ... FROM fails, try alternative approach (individual updates)
         print(f"  WARNING: UPDATE ... FROM failed, trying alternative approach: {e}", flush=True)
@@ -1334,9 +1499,9 @@ def _stage_4_llm_analysis(orchestrator: Orchestrator, db_client: DuckDBClient,
                 taxonomy_version = COALESCE((SELECT taxonomy_version FROM analysis_cache WHERE url_signature = signature_stats.url_signature AND status = 'active' LIMIT 1), ?)
             WHERE run_id = ?
             """
-            if db_client._writer_conn:
-                db_client._writer_conn.execute(alt_query, [orchestrator.taxonomy_version, run_context.run_id])
-                db_client._writer_conn.commit()
+            # Use Writer Queue (execute_sql) instead of direct connection
+            db_client.execute_sql(alt_query, [orchestrator.taxonomy_version, run_context.run_id])
+            db_client.flush()
         except Exception as e2:
             print(f"  WARNING: Alternative UPDATE approach also failed: {e2}", flush=True)
             print(f"  Continuing without taxonomy code update (Evidence Pack may have NULL values)", flush=True)
@@ -1369,16 +1534,51 @@ def _stage_5_reporting(orchestrator: Orchestrator, canonical_events: list, signa
     burst_hit = metadata.get("burst_hit", 0)
     cumulative_hit = metadata.get("cumulative_hit", 0)
     
-    # Recalculate LLM analyzed count from database (for accuracy)
-    # This ensures we count all LLM-classified signatures, including cache hits
-    llm_analyzed_db = reader.execute(
-        "SELECT COUNT(*) FROM analysis_cache WHERE classification_source = 'LLM' AND status = 'active'"
-    ).fetchone()
-    llm_analyzed_count_final = llm_analyzed_db[0] if llm_analyzed_db else llm_analyzed_count
+    # Phase 7-4: Recalculate LLM coverage from database (audit-ready definition)
+    # This ensures all LLM coverage metrics are computed from authoritative DB state
+    llm_coverage_from_db = report_builder.compute_llm_coverage_from_db(
+        db_reader=reader,
+        run_id=run_context.run_id,
+        unknown_count=unknown_count
+    )
     
-    # Get cache hit rate
-    total_classified = rule_classified_count + llm_analyzed_count_final + cache_hit_count
-    cache_hit_rate = cache_hit_count / signature_count if signature_count > 0 else 0.0
+    # Use DB-computed values (these are the authoritative definitions)
+    llm_analyzed_count_final = llm_coverage_from_db["llm_analyzed_count"]
+    needs_review_count_final = llm_coverage_from_db["needs_review_count"]
+    failed_permanent_count = llm_coverage_from_db["failed_permanent_count"]
+    cache_hit_rate = llm_coverage_from_db["cache_hit_rate"]
+    
+    # Phase 7-3: Get code_version, input_manifest_hash, and input_files_summary for report
+    run_row = reader.execute(
+        "SELECT code_version, input_manifest_hash FROM runs WHERE run_id = ?",
+        [run_context.run_id]
+    ).fetchone()
+    code_version = run_row[0] if run_row and run_row[0] else "unknown"
+    final_input_manifest_hash = run_row[1] if run_row and run_row[1] else run_context.input_manifest_hash
+    
+    # Get input_files_summary (count, total_size, time_range)
+    input_files_rows = reader.execute(
+        """
+        SELECT 
+            COUNT(*) as file_count,
+            SUM(file_size) as total_size,
+            MIN(min_time) as earliest_time,
+            MAX(max_time) as latest_time
+        FROM input_files
+        WHERE run_id = ?
+        """,
+        [run_context.run_id]
+    ).fetchone()
+    
+    input_files_summary = {}
+    if input_files_rows:
+        file_count, total_size, earliest_time, latest_time = input_files_rows
+        input_files_summary = {
+            "file_count": int(file_count) if file_count else 0,
+            "total_size_bytes": int(total_size) if total_size else 0,
+            "earliest_time": earliest_time.isoformat() if earliest_time else None,
+            "latest_time": latest_time.isoformat() if latest_time else None
+        }
     
     # Build report
     report = report_builder.build_report(
@@ -1416,8 +1616,10 @@ def _stage_5_reporting(orchestrator: Orchestrator, canonical_events: list, signa
             "unknown_count": unknown_count
         },
         llm_coverage={
+            # Phase 7-4: All values computed from DB (audit-ready definition)
             "llm_analyzed_count": llm_analyzed_count_final,
-            "needs_review_count": llm_needs_review_count,
+            "needs_review_count": needs_review_count_final,
+            "failed_permanent_count": failed_permanent_count,
             "cache_hit_rate": cache_hit_rate,
             "skipped_count": llm_skipped_count,
             # Audit trail: LLM provider and model info
@@ -1425,7 +1627,7 @@ def _stage_5_reporting(orchestrator: Orchestrator, canonical_events: list, signa
             "llm_model": llm_client.provider_config.get("model", "unknown"),
             "structured_output": llm_client.provider_config.get("structured_output", False),
             "schema_sanitized": True,  # We always sanitize schema for Gemini
-            # Retry summary for audit
+            # Retry summary for audit (run-level aggregation)
             "retry_summary": total_retry_summary,
             "rate_limit_events": total_retry_summary["rate_limit_events"]
         },
@@ -1434,7 +1636,10 @@ def _stage_5_reporting(orchestrator: Orchestrator, canonical_events: list, signa
         prompt_version="1",
         exclusions={
             "action_filter": abc_detector.action_filter
-        }
+        },
+        code_version=code_version,
+        input_manifest_hash=final_input_manifest_hash,
+        input_files_summary=input_files_summary
     )
     
     # Save report

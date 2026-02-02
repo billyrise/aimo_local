@@ -1,0 +1,109 @@
+# Cost Reduction Simulation Configuration
+# 
+# This configuration defines pricing assumptions for AI services
+# used in cost reduction simulation.
+# 
+# Reference: Tier1商品要件 - コスト削減シミュレーション
+
+# -----------------------------------------------------------------------------
+# Service Pricing (USD per access/month)
+# -----------------------------------------------------------------------------
+# Default pricing assumptions for common AI services
+# These are estimates and should be updated based on actual pricing research
+
+service_pricing:
+  # High-volume GenAI services (per user per month)
+  "ChatGPT":
+    cost_per_user_per_month_usd: 20.0
+    cost_per_access_usd: 0.0  # Subscription-based
+    notes: "ChatGPT Plus subscription"
+  
+  "Claude":
+    cost_per_user_per_month_usd: 20.0
+    cost_per_access_usd: 0.0
+    notes: "Claude Pro subscription"
+  
+  "Gemini":
+    cost_per_user_per_month_usd: 0.0  # Free tier available
+    cost_per_access_usd: 0.0
+    notes: "Google Gemini (free tier)"
+  
+  "Copilot":
+    cost_per_user_per_month_usd: 30.0
+    cost_per_access_usd: 0.0
+    notes: "Microsoft Copilot Pro"
+  
+  # AI-augmented services (per user per month)
+  "DeepL":
+    cost_per_user_per_month_usd: 6.99
+    cost_per_access_usd: 0.0
+    notes: "DeepL Pro subscription"
+  
+  "Grammarly":
+    cost_per_user_per_month_usd: 12.0
+    cost_per_access_usd: 0.0
+    notes: "Grammarly Premium"
+  
+  # AI model hosting (per API call)
+  "Hugging Face":
+    cost_per_user_per_month_usd: 0.0
+    cost_per_access_usd: 0.001  # Pay-per-use API
+    notes: "Hugging Face API (pay-per-use)"
+  
+  "Replicate":
+    cost_per_user_per_month_usd: 0.0
+    cost_per_access_usd: 0.01
+    notes: "Replicate API (pay-per-use)"
+  
+  # Default pricing for unknown services
+  default_genai:
+    cost_per_user_per_month_usd: 15.0
+    cost_per_access_usd: 0.0
+    notes: "Default pricing for unknown GenAI services"
+
+# -----------------------------------------------------------------------------
+# Reduction Assumptions
+# -----------------------------------------------------------------------------
+# Assumptions for cost reduction calculation (simple weighted sum)
+
+reduction_assumptions:
+  # Duplicate usage reduction (users using multiple similar services)
+  duplicate_usage:
+    weight: 0.3  # 30% reduction potential
+    description: "Users using multiple similar GenAI services can consolidate to one"
+    threshold_users: 2  # Minimum users to consider for duplicate reduction
+  
+  # Dormant usage reduction (users with low activity)
+  dormant_usage:
+    weight: 0.2  # 20% reduction potential
+    description: "Users with low activity (< 5 accesses/month) can be deprovisioned"
+    threshold_accesses_per_month: 5
+    threshold_days_inactive: 30  # Days without access
+  
+  # Enterprise consolidation
+  enterprise_consolidation:
+    weight: 0.25  # 25% reduction potential
+    description: "Department-level consolidation to enterprise licenses"
+    threshold_department_users: 10  # Minimum users per department
+  
+  # Total reduction potential (simple weighted sum)
+  # Formula: duplicate_weight * duplicate_users + dormant_weight * dormant_users + consolidation_weight * consolidation_users
+  # This is a simplified model - actual reduction may vary
+
+# -----------------------------------------------------------------------------
+# Annual Projection
+# -----------------------------------------------------------------------------
+# How to project monthly costs to annual
+
+annual_projection:
+  months_per_year: 12
+  # Note: Simple multiplication (monthly_cost * 12)
+  # More sophisticated models could account for seasonal variations
+
+# -----------------------------------------------------------------------------
+# Notes
+# -----------------------------------------------------------------------------
+# - Pricing is estimated and should be verified with actual service pricing
+# - Reduction assumptions are conservative estimates
+# - Actual cost reduction may vary based on organizational policies
+# - This simulation is for planning purposes only

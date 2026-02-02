@@ -130,6 +130,60 @@ class Orchestrator:
         
         return manifest_hash
     
+    def compute_input_manifest_hash_from_db(self, run_id: str) -> str:
+        """
+        Compute input_manifest_hash from input_files table (Phase 7-3: with vendor, min/max_time).
+        
+        This is the final hash that includes all audit fields:
+        - file_hash (sha256 of file content)
+        - vendor
+        - min_time, max_time (from ingestion)
+        
+        Args:
+            run_id: Run ID to compute hash for
+            
+        Returns:
+            SHA256 hash of normalized manifest (file_hash|vendor|min_time|max_time, sorted)
+        """
+        reader = self.db_client.get_reader()
+        
+        # Get all input files for this run
+        input_files_rows = reader.execute(
+            """
+            SELECT file_hash, vendor, min_time, max_time
+            FROM input_files
+            WHERE run_id = ?
+            ORDER BY file_hash, vendor, min_time, max_time
+            """,
+            [run_id]
+        ).fetchall()
+        
+        if not input_files_rows:
+            # Fallback: use initial hash if no input_files records yet
+            return self.current_run.input_manifest_hash if self.current_run else ""
+        
+        # Build manifest entries: file_hash|vendor|min_time|max_time
+        manifest_entries = []
+        for row in input_files_rows:
+            file_hash, vendor, min_time, max_time = row
+            
+            # Format: file_hash|vendor|min_time|max_time
+            # Use empty string for None values
+            min_time_str = min_time.isoformat() if min_time else ""
+            max_time_str = max_time.isoformat() if max_time else ""
+            vendor_str = vendor or ""
+            
+            manifest_entry = f"{file_hash}|{vendor_str}|{min_time_str}|{max_time_str}"
+            manifest_entries.append(manifest_entry)
+        
+        # Join entries with newline for determinism
+        manifest_str = "\n".join(manifest_entries)
+        
+        # Hash the manifest
+        manifest_hash = hashlib.sha256(manifest_str.encode('utf-8')).hexdigest()
+        
+        return manifest_hash
+    
     def compute_run_key(self, 
                        input_manifest_hash: str,
                        target_range_start: Optional[str] = None,
@@ -275,6 +329,11 @@ class Orchestrator:
                 status="running"
             )
             
+            # Get code_version (git commit hash)
+            from utils.git_version import get_code_version
+            repo_root = Path(__file__).parent.parent.parent
+            code_version = get_code_version(repo_root)
+            
             # Insert run record (idempotent: ON CONFLICT DO NOTHING)
             self.db_client.insert("runs", {
                 "run_id": run_id,
@@ -282,6 +341,7 @@ class Orchestrator:
                 "started_at": started_at.isoformat(),
                 "status": "running",
                 "last_completed_stage": 0,
+                "code_version": code_version,
                 "signature_version": self.signature_version,
                 "rule_version": self.rule_version,
                 "prompt_version": self.prompt_version,
@@ -317,15 +377,14 @@ class Orchestrator:
         
         # Update status separately if it changed (indexed column - DuckDB limitation)
         # DuckDB cannot update indexed columns via ON CONFLICT DO UPDATE
-        # Use direct UPDATE for indexed column, but handle errors gracefully
+        # P0: Use Writer Queue for all DB writes (even indexed columns)
         if status != self.current_run.status:
             try:
-                if self.db_client._writer_conn:
-                    # Use writer connection directly for indexed column update
-                    self.db_client._writer_conn.execute(
-                        "UPDATE runs SET status = ? WHERE run_id = ?",
-                        [status, self.current_run.run_id]
-                    )
+                # Use Writer Queue (execute_sql) instead of direct connection
+                self.db_client.execute_sql(
+                    "UPDATE runs SET status = ? WHERE run_id = ?",
+                    [status, self.current_run.run_id]
+                )
             except Exception as e:
                 # DuckDB may have issues with indexed column updates
                 # Log warning but continue (status update is not critical for checkpoint functionality)
@@ -352,27 +411,28 @@ class Orchestrator:
         finished_at = datetime.utcnow()
         
         # DuckDB limitation: Cannot update indexed columns (status) via ON CONFLICT DO UPDATE
-        # Workaround: Temporarily drop index, update using direct SQL, then recreate index
+        # P0: Use Writer Queue for all DB writes (even indexed columns and index operations)
+        # Workaround: Temporarily drop index, update using Writer Queue, then recreate index
         try:
-            # Drop index temporarily
-            self.db_client._writer_conn.execute("DROP INDEX IF EXISTS idx_runs_status")
-            self.db_client._writer_conn.commit()
+            # Drop index temporarily (via Writer Queue)
+            self.db_client.execute_sql("DROP INDEX IF EXISTS idx_runs_status")
+            self.db_client.flush()
             
-            # Update all columns including status using direct SQL (bypass Writer Queue)
-            self.db_client._writer_conn.execute(
+            # Update all columns including status using Writer Queue
+            self.db_client.execute_sql(
                 "UPDATE runs SET status = ?, finished_at = ?, last_completed_stage = ? WHERE run_id = ?",
                 [status, finished_at.isoformat(), self.STAGE_5_REPORTING, self.current_run.run_id]
             )
-            self.db_client._writer_conn.commit()
+            self.db_client.flush()
             
-            # Recreate index
-            self.db_client._writer_conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status)")
-            self.db_client._writer_conn.commit()
+            # Recreate index (via Writer Queue)
+            self.db_client.execute_sql("CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status)")
+            self.db_client.flush()
         except Exception as e:
             # If index drop/update fails, try to recreate index and log warning
             try:
-                self.db_client._writer_conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status)")
-                self.db_client._writer_conn.commit()
+                self.db_client.execute_sql("CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status)")
+                self.db_client.flush()
             except Exception:
                 pass
             print(f"  WARNING: Failed to update status to '{status}': {e}", flush=True)
