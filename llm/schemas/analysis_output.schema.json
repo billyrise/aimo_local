@@ -2,10 +2,26 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.local/schemas/llm/analysis_output.schema.json",
   "title": "AIMO LLM Service Analysis Output",
-  "description": "Schema for LLM-generated service classification results",
+  "description": "Schema for LLM-generated service classification results (AIMO Standard v0.1.7+ taxonomy)",
   "type": "object",
   "additionalProperties": false,
-  "required": ["service_name", "usage_type", "risk_level", "category", "confidence", "rationale_short", "fs_uc_code", "dt_code", "ch_code", "im_code", "rs_code", "ob_code", "ev_code", "taxonomy_version"],
+  "required": [
+    "service_name",
+    "usage_type",
+    "risk_level",
+    "category",
+    "confidence",
+    "rationale_short",
+    "fs_code",
+    "im_code",
+    "uc_codes",
+    "dt_codes",
+    "ch_codes",
+    "rs_codes",
+    "ev_codes",
+    "ob_codes",
+    "aimo_standard_version"
+  ],
   "properties": {
     "service_name": {
       "type": "string",
@@ -40,51 +56,73 @@
       "maxLength": 400,
       "description": "Brief explanation for the classification decision"
     },
-    "fs_uc_code": {
+    "fs_code": {
       "type": "string",
-      "description": "FS-UC code (Taxonomyセット). Use empty string if unknown.",
-      "minLength": 0,
-      "maxLength": 50
-    },
-    "dt_code": {
-      "type": "string",
-      "description": "DT code (Taxonomyセット). Use empty string if unknown.",
-      "minLength": 0,
-      "maxLength": 50
-    },
-    "ch_code": {
-      "type": "string",
-      "description": "CH code (Taxonomyセット). Use empty string if unknown.",
-      "minLength": 0,
-      "maxLength": 50
+      "pattern": "^FS-\\d{3}$",
+      "description": "Functional Scope code (exactly 1 required). Format: FS-NNN"
     },
     "im_code": {
       "type": "string",
-      "description": "IM code (Taxonomyセット). Use empty string if unknown.",
-      "minLength": 0,
-      "maxLength": 50
+      "pattern": "^IM-\\d{3}$",
+      "description": "Integration Mode code (exactly 1 required). Format: IM-NNN"
     },
-    "rs_code": {
-      "type": "string",
-      "description": "RS code (Taxonomyセット). Use empty string if unknown.",
-      "minLength": 0,
-      "maxLength": 50
+    "uc_codes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^UC-\\d{3}$"
+      },
+      "minItems": 1,
+      "description": "Use Case Class codes (1+ required). Format: UC-NNN"
     },
-    "ob_code": {
-      "type": "string",
-      "description": "OB code (Taxonomyセット). Use empty string if unknown.",
-      "minLength": 0,
-      "maxLength": 50
+    "dt_codes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^DT-\\d{3}$"
+      },
+      "minItems": 1,
+      "description": "Data Type codes (1+ required). Format: DT-NNN"
     },
-    "ev_code": {
-      "type": "string",
-      "description": "EV code (Taxonomyセット). Use empty string if unknown.",
-      "minLength": 0,
-      "maxLength": 50
+    "ch_codes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^CH-\\d{3}$"
+      },
+      "minItems": 1,
+      "description": "Channel codes (1+ required). Format: CH-NNN"
     },
-    "taxonomy_version": {
+    "rs_codes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^RS-\\d{3}$"
+      },
+      "minItems": 1,
+      "description": "Risk Surface codes (1+ required). Format: RS-NNN"
+    },
+    "ev_codes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^EV-\\d{3}$"
+      },
+      "minItems": 1,
+      "description": "Evidence Type codes (1+ required). Format: EV-NNN"
+    },
+    "ob_codes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^OB-\\d{3}$"
+      },
+      "minItems": 0,
+      "description": "Outcome/Benefit codes (0+ allowed, optional). Format: OB-NNN"
+    },
+    "aimo_standard_version": {
       "type": "string",
-      "description": "Taxonomy version used for classification (Taxonomyセット)",
+      "description": "AIMO Standard version used for classification (e.g., '0.1.7')",
       "minLength": 1,
       "maxLength": 20
     },
