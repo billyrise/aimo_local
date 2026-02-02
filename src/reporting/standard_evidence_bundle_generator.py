@@ -643,7 +643,8 @@ class StandardEvidenceBundleGenerator:
         
         if self._validator_runner:
             try:
-                result = self._validator_runner.run_validation(str(bundle_dir))
+                # Pass Path object, not string - validator expects Path
+                result = self._validator_runner.run_validation(evidence_bundle_dir=bundle_dir)
                 if not result.passed:
                     errors.extend(result.errors)
                 return result.passed, errors

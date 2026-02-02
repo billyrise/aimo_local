@@ -116,15 +116,32 @@ class ValidatorRunner:
         """
         Run the official Standard validator CLI.
         
+        Args:
+            target_path: Path to Evidence Bundle directory or manifest file
+        
         Returns:
             ValidationResult if CLI ran successfully, None if CLI not available
         """
         if self._validator_cli_path is None:
             return None
         
+        # Standard validator CLI expects a JSON file path, not a directory
+        # If directory provided, look for manifest file
+        manifest_path = target_path
+        if target_path.is_dir():
+            # Try evidence_pack_manifest.json first, then manifest.json
+            for manifest_name in ["evidence_pack_manifest.json", "manifest.json"]:
+                candidate = target_path / manifest_name
+                if candidate.exists():
+                    manifest_path = candidate
+                    break
+            else:
+                # No manifest found, let fallback handle it
+                return None
+        
         try:
             result = subprocess.run(
-                [sys.executable, str(self._validator_cli_path), str(target_path)],
+                [sys.executable, str(self._validator_cli_path), str(manifest_path)],
                 capture_output=True,
                 text=True,
                 timeout=60
