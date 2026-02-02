@@ -206,6 +206,60 @@ src/
 
 ---
 
+## 7. 禁止事項（絶対に守ること）
+
+以下は **絶対に禁止** されている事項です。違反した場合、CI が失敗し、本番デプロイがブロックされます。
+
+### 7.1 pinning 無効化の禁止
+
+| 禁止事項 | 理由 | 例外 |
+|----------|------|------|
+| `skip_pinning_check=True` の使用 | 監査再現性が失われる | AIMO_ALLOW_SKIP_PINNING=1 設定時のみ（開発検証の短時間のみ許可） |
+| `AIMO_ALLOW_SKIP_PINNING=1` を CI に設定 | 品質ゲートが無効になる | **絶対禁止** |
+| `AIMO_ALLOW_SKIP_PINNING=1` を本番環境に設定 | 監査耐性が失われる | **絶対禁止** |
+| `--skip-pin-check` フラグの常用 | 不一致を見逃す | アップグレードスクリプト実行時のみ |
+
+### 7.2 /latest 追従の禁止
+
+| 禁止事項 | 理由 |
+|----------|------|
+| Standard リポジトリの `main` ブランチ直接参照 | 監査上の「正」が揺れる |
+| `HEAD` や `/latest` へのシンボリックリンク | 実行ごとに結果が変わる可能性 |
+| 日次自動更新スクリプト | pinning の意味がなくなる |
+
+### 7.3 タグ書き換えの禁止
+
+| 禁止事項 | 理由 | 対処 |
+|----------|------|------|
+| v0.1.7 タグの commit hash 変更 | commit mismatch が発生 | Standard リポジトリのメンテナに報告 |
+| artifacts zip の内容変更 | SHA mismatch が発生 | 再リリースを依頼 |
+| pin 値のみ更新して commit 確認をスキップ | 事故の隠蔽になる | **絶対禁止** |
+
+### 7.4 違反時の動作
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ skip_pinning_check=True を渡した場合:                                │
+│                                                                     │
+│ 1. AIMO_ALLOW_SKIP_PINNING=1 が設定されていない → ValueError で即失敗 │
+│ 2. AIMO_ALLOW_SKIP_PINNING=1 が設定されている → WARNING 付きで続行   │
+│                                                                     │
+│ CI では AIMO_ALLOW_SKIP_PINNING を設定しないため、                   │
+│ skip_pinning_check=True のコードは必ず失敗する。                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 7.5 正しいアップグレード手順（再掲）
+
+1. 新しいブランチを作成
+2. `AIMO_ALLOW_SKIP_PINNING=1 ./scripts/upgrade_standard_version.sh --version X.Y.Z`
+3. 新しい commit/SHA を `pinning.py` に記録
+4. `AIMO_ALLOW_SKIP_PINNING` を **削除** してテスト実行
+5. CI で全テストが通ることを確認
+6. PR を作成してレビューを受ける
+
+---
+
 **作成日**: 2026-02-02
 **適用 Standard Version**: v0.1.7
 **次回更新予定**: Standard Major バージョンアップ時

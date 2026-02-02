@@ -392,6 +392,20 @@ def verify_against_pin(manifest: dict, version: str) -> tuple[bool, list[str]]:
     return len(errors) == 0, errors
 
 
+def _is_skip_pinning_allowed() -> bool:
+    """
+    Check if skip pinning check is allowed via environment variable.
+    
+    SECURITY: Skipping pinning check is ONLY allowed when:
+    1. AIMO_ALLOW_SKIP_PINNING=1 is explicitly set
+    2. This should NEVER be set in CI/production
+    
+    Returns:
+        True if skip is allowed (environment variable is set)
+    """
+    return os.getenv("AIMO_ALLOW_SKIP_PINNING", "").lower() in ("1", "true", "yes")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Sync AIMO Standard submodule to a specific version"
@@ -419,7 +433,7 @@ def main():
     parser.add_argument(
         "--skip-pin-check",
         action="store_true",
-        help="Skip pinning verification (ONLY for upgrade scripts)"
+        help="Skip pinning verification (REQUIRES AIMO_ALLOW_SKIP_PINNING=1)"
     )
     
     args = parser.parse_args()
@@ -437,8 +451,33 @@ def main():
     if "error" in manifest:
         sys.exit(1)
     
-    # Verify against pinned values (unless skipped)
-    if not args.skip_pin_check:
+    # Verify against pinned values (unless skipped with environment variable guard)
+    should_skip_pin_check = False
+    if args.skip_pin_check:
+        if _is_skip_pinning_allowed():
+            should_skip_pin_check = True
+            print(
+                "WARNING: Pinning check is SKIPPED (AIMO_ALLOW_SKIP_PINNING=1). "
+                "This is for upgrade testing ONLY.",
+                file=sys.stderr
+            )
+        else:
+            print("", file=sys.stderr)
+            print("=" * 70, file=sys.stderr)
+            print("ERROR: --skip-pin-check requires AIMO_ALLOW_SKIP_PINNING=1", file=sys.stderr)
+            print("=" * 70, file=sys.stderr)
+            print("", file=sys.stderr)
+            print("Pinning check cannot be skipped without explicit environment", file=sys.stderr)
+            print("variable. This prevents accidental version drift.", file=sys.stderr)
+            print("", file=sys.stderr)
+            print("For upgrade testing ONLY, run:", file=sys.stderr)
+            print("  AIMO_ALLOW_SKIP_PINNING=1 python scripts/sync_aimo_standard.py --skip-pin-check", file=sys.stderr)
+            print("", file=sys.stderr)
+            print("NEVER set AIMO_ALLOW_SKIP_PINNING in CI or production.", file=sys.stderr)
+            print("=" * 70, file=sys.stderr)
+            sys.exit(3)
+    
+    if not should_skip_pin_check:
         passed, errors = verify_against_pin(manifest, args.version)
         if not passed:
             print("", file=sys.stderr)

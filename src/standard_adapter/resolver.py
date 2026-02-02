@@ -209,6 +209,20 @@ def sync_to_cache(
     return version_cache_dir, manifest
 
 
+def _is_skip_pinning_allowed() -> bool:
+    """
+    Check if skip_pinning_check is allowed via environment variable.
+    
+    SECURITY: Skipping pinning check is ONLY allowed when:
+    1. AIMO_ALLOW_SKIP_PINNING=1 is explicitly set
+    2. This should NEVER be set in CI/production
+    
+    Returns:
+        True if skip is allowed (environment variable is set)
+    """
+    return os.getenv("AIMO_ALLOW_SKIP_PINNING", "").lower() in ("1", "true", "yes")
+
+
 def resolve_standard_artifacts(
     version: str = AIMO_STANDARD_VERSION_DEFAULT,
     submodule_path: str = AIMO_STANDARD_SUBMODULE_PATH,
@@ -227,13 +241,18 @@ def resolve_standard_artifacts(
     If the resolved artifacts don't match the pinned values, a
     StandardPinningError is raised to prevent accidental version drift.
     
+    SECURITY: The skip_pinning_check parameter is guarded by the
+    AIMO_ALLOW_SKIP_PINNING environment variable. Even if skip_pinning_check=True
+    is passed, it will be ignored unless AIMO_ALLOW_SKIP_PINNING=1 is set.
+    This prevents developers from accidentally disabling pinning.
+    
     Args:
         version: Target version (e.g., "0.1.7")
         submodule_path: Relative path to submodule from project root
         cache_dir: Base cache directory
         force_sync: If True, force resync even if cache exists
-        skip_pinning_check: If True, skip pinning verification
-            (ONLY use in upgrade scripts, never in production)
+        skip_pinning_check: If True AND AIMO_ALLOW_SKIP_PINNING=1, skip pinning verification
+            (ONLY use in upgrade scripts during controlled testing)
     
     Returns:
         ResolvedStandardArtifacts with paths and checksums
@@ -241,12 +260,31 @@ def resolve_standard_artifacts(
     Raises:
         RuntimeError: If submodule initialization or checkout fails
         StandardPinningError: If pinning verification fails
+        ValueError: If skip_pinning_check=True but AIMO_ALLOW_SKIP_PINNING is not set
     """
     from .pinning import (
         enforce_pinning,
         PINNED_STANDARD_VERSION,
         StandardPinningError,
     )
+    
+    # SECURITY: Guard skip_pinning_check with environment variable
+    effective_skip_pinning = False
+    if skip_pinning_check:
+        if _is_skip_pinning_allowed():
+            effective_skip_pinning = True
+            print(
+                "  WARNING: Pinning check is SKIPPED (AIMO_ALLOW_SKIP_PINNING=1). "
+                "This is for upgrade testing ONLY. Never use in CI/production.",
+                flush=True
+            )
+        else:
+            raise ValueError(
+                "skip_pinning_check=True was passed but AIMO_ALLOW_SKIP_PINNING "
+                "environment variable is not set. Pinning check cannot be skipped "
+                "without explicit environment variable. This prevents accidental "
+                "version drift. Set AIMO_ALLOW_SKIP_PINNING=1 for upgrade testing only."
+            )
     
     project_root = get_project_root()
     full_submodule_path = project_root / submodule_path
@@ -280,7 +318,7 @@ def resolve_standard_artifacts(
     )
     
     # Step 5: Enforce pinning verification (critical for audit reproducibility)
-    if not skip_pinning_check:
+    if not effective_skip_pinning:
         # Only verify if resolving the pinned version
         if version == PINNED_STANDARD_VERSION:
             enforce_pinning(resolved)
