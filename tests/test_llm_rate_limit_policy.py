@@ -6,10 +6,15 @@ Tests that 429/rate limit errors are handled correctly:
 - Batch size is reduced (20 → 10 → 5)
 - needs_review status is set when retries are exhausted
 - retry_summary is populated with rate_limit_events
+
+NOTE: These tests use mocks and do not make real LLM API calls.
+They temporarily disable AIMO_DISABLE_LLM to allow testing the
+rate limit handling logic with mocked responses.
 """
 
 import pytest
 import sys
+import os
 import time
 from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
@@ -19,6 +24,20 @@ from datetime import datetime
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from llm.client import LLMClient
+
+
+@pytest.fixture(autouse=True)
+def disable_llm_guard():
+    """
+    Temporarily disable AIMO_DISABLE_LLM for these tests.
+    
+    These tests use mocks and don't make real LLM calls, but need
+    to bypass the AIMO_DISABLE_LLM guard to test rate limit handling.
+    """
+    original_value = os.environ.pop("AIMO_DISABLE_LLM", None)
+    yield
+    if original_value is not None:
+        os.environ["AIMO_DISABLE_LLM"] = original_value
 
 
 class TestLLMRateLimitPolicy:
