@@ -242,16 +242,28 @@ class LLMClient:
         # Load prompt templates
         from llm.prompt_templates import (
             SERVICE_ANALYSIS_SYSTEM,
-            SERVICE_ANALYSIS_USER,
             JSON_RETRY_PROMPT,
             format_samples_for_prompt,
-            get_json_schema_for_prompt
+            get_json_schema_for_prompt,
+            build_user_prompt,
+            DEFAULT_AIMO_STANDARD_VERSION
         )
         self.system_prompt = SERVICE_ANALYSIS_SYSTEM
-        self.user_prompt_template = SERVICE_ANALYSIS_USER
         self.json_retry_prompt = JSON_RETRY_PROMPT
         self.format_samples = format_samples_for_prompt
         self.get_json_schema = get_json_schema_for_prompt
+        self.build_user_prompt = build_user_prompt
+        self.aimo_standard_version = DEFAULT_AIMO_STANDARD_VERSION
+        
+        # Initialize taxonomy validator (optional, for validation)
+        self._taxonomy_adapter = None
+        try:
+            from standard_adapter.taxonomy import get_taxonomy_adapter
+            self._taxonomy_adapter = get_taxonomy_adapter(version=self.aimo_standard_version)
+        except ImportError:
+            pass  # Standard Adapter not available
+        except Exception as e:
+            print(f"Warning: Could not initialize taxonomy adapter: {e}", flush=True)
     
     def _check_budget(self, estimated_cost_usd: float, candidate_flags: Optional[str] = None) -> Tuple[bool, str]:
         """
@@ -572,6 +584,170 @@ class LLMClient:
         except jsonschema.ValidationError:
             return False
     
+    def _get_unknown_classification(self) -> Dict[str, Any]:
+        """
+        Get a default "Unknown" classification with 8-dimension format.
+        
+        Returns:
+            Classification dict with fallback codes
+        """
+        return {
+            "service_name": "Unknown",
+            "usage_type": "unknown",
+            "risk_level": "medium",
+            "category": "Unknown",
+            "confidence": 0.3,
+            "rationale_short": "Unable to identify service",
+            "fs_code": "FS-099",
+            "im_code": "IM-099",
+            "uc_codes": ["UC-099"],
+            "dt_codes": ["DT-099"],
+            "ch_codes": ["CH-099"],
+            "rs_codes": ["RS-099"],
+            "ev_codes": ["EV-099"],
+            "ob_codes": [],
+            "aimo_standard_version": self.aimo_standard_version
+        }
+    
+    def _normalize_and_validate_result(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Normalize and validate a single classification result.
+        
+        Ensures:
+        - All required fields are present
+        - Array fields are arrays
+        - Single-value fields are strings
+        - Taxonomy validation if adapter available
+        
+        Args:
+            result: Raw classification result
+        
+        Returns:
+            Normalized result dict with validation status
+        """
+        normalized = dict(result)
+        
+        # Ensure aimo_standard_version
+        if "aimo_standard_version" not in normalized:
+            normalized["aimo_standard_version"] = self.aimo_standard_version
+        
+        # Handle legacy format conversion (if old format detected)
+        if "fs_uc_code" in normalized and "fs_code" not in normalized:
+            # Legacy 7-code format - convert to 8-dimension
+            normalized = self._convert_legacy_to_8dim(normalized)
+        
+        # Ensure fs_code is string
+        if "fs_code" not in normalized or not isinstance(normalized.get("fs_code"), str):
+            normalized["fs_code"] = "FS-099"
+        
+        # Ensure im_code is string
+        if "im_code" not in normalized or not isinstance(normalized.get("im_code"), str):
+            normalized["im_code"] = "IM-099"
+        
+        # Ensure array fields
+        for field in ["uc_codes", "dt_codes", "ch_codes", "rs_codes", "ev_codes", "ob_codes"]:
+            if field not in normalized or not isinstance(normalized.get(field), list):
+                # Use fallback
+                dim = field.replace("_codes", "").upper()
+                normalized[field] = [f"{dim}-099"] if field != "ob_codes" else []
+        
+        # Validate cardinality
+        validation_errors = []
+        
+        # FS and IM must be exactly 1 (string)
+        if not normalized.get("fs_code"):
+            validation_errors.append("fs_code is required")
+        if not normalized.get("im_code"):
+            validation_errors.append("im_code is required")
+        
+        # UC, DT, CH, RS, EV must have at least 1
+        for field in ["uc_codes", "dt_codes", "ch_codes", "rs_codes", "ev_codes"]:
+            if not normalized.get(field) or len(normalized[field]) < 1:
+                validation_errors.append(f"{field} requires at least 1 element")
+                # Add fallback
+                dim = field.replace("_codes", "").upper()
+                normalized[field] = [f"{dim}-099"]
+        
+        # Validate against taxonomy adapter if available
+        if self._taxonomy_adapter and not validation_errors:
+            try:
+                from standard_adapter.taxonomy import validate_assignment
+                
+                adapter_errors = validate_assignment(
+                    fs_codes=[normalized["fs_code"]],
+                    im_codes=[normalized["im_code"]],
+                    uc_codes=normalized["uc_codes"],
+                    dt_codes=normalized["dt_codes"],
+                    ch_codes=normalized["ch_codes"],
+                    rs_codes=normalized["rs_codes"],
+                    ev_codes=normalized["ev_codes"],
+                    ob_codes=normalized.get("ob_codes", []),
+                    version=self.aimo_standard_version
+                )
+                
+                if adapter_errors:
+                    validation_errors.extend(adapter_errors)
+                    
+            except Exception as e:
+                # Log but don't fail
+                print(f"Warning: Taxonomy validation error: {e}", flush=True)
+        
+        # Add validation status
+        normalized["_validation_errors"] = validation_errors
+        normalized["_needs_review"] = len(validation_errors) > 0
+        
+        return normalized
+    
+    def _convert_legacy_to_8dim(self, legacy: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Convert legacy 7-code format to 8-dimension format.
+        
+        Args:
+            legacy: Legacy classification with fs_uc_code, dt_code, etc.
+        
+        Returns:
+            New format classification
+        """
+        result = dict(legacy)
+        
+        # fs_uc_code -> fs_code (best effort, may need review)
+        fs_uc = legacy.get("fs_uc_code", "")
+        if fs_uc and fs_uc.startswith("FS-"):
+            result["fs_code"] = fs_uc
+        else:
+            result["fs_code"] = "FS-099"
+        
+        # im_code stays as-is (single value)
+        if "im_code" not in result or not result["im_code"]:
+            result["im_code"] = "IM-099"
+        
+        # Convert single codes to arrays
+        for old_field, new_field in [
+            ("dt_code", "dt_codes"),
+            ("ch_code", "ch_codes"),
+            ("rs_code", "rs_codes"),
+            ("ob_code", "ob_codes"),
+            ("ev_code", "ev_codes")
+        ]:
+            old_val = legacy.get(old_field, "")
+            if old_val:
+                result[new_field] = [old_val]
+            else:
+                dim = old_field.replace("_code", "").upper()
+                result[new_field] = [f"{dim}-099"] if new_field != "ob_codes" else []
+        
+        # UC from fs_uc_code is not directly extractable - use fallback
+        result["uc_codes"] = ["UC-099"]
+        
+        # Version
+        result["aimo_standard_version"] = self.aimo_standard_version
+        
+        # Remove legacy fields
+        for field in ["fs_uc_code", "dt_code", "ch_code", "rs_code", "ob_code", "ev_code", "taxonomy_version"]:
+            result.pop(field, None)
+        
+        return result
+    
     def analyze_batch(self, signatures: List[Dict[str, Any]], 
                      initial_batch_size: Optional[int] = None) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         """
@@ -625,16 +801,12 @@ class LLMClient:
         if not is_allowed:
             raise Exception(f"budget_exceeded: {reason}")
         
-        # Build prompt
-        samples_text = self.format_samples(signatures)
-        json_schema_text = self.get_json_schema()
+        # Build prompt (using new 8-dimension format)
+        user_prompt = self.build_user_prompt(signatures, self.aimo_standard_version)
         
         messages = [
             {"role": "system", "content": self.system_prompt},
-            {"role": "user", "content": self.user_prompt_template.format(
-                json_schema=json_schema_text,
-                samples=samples_text
-            )}
+            {"role": "user", "content": user_prompt}
         ]
         
         # Build response format for structured outputs
@@ -708,8 +880,8 @@ class LLMClient:
                             {"role": "system", "content": self.system_prompt},
                             {"role": "user", "content": self.json_retry_prompt.format(
                                 error_message=str(e),
-                                json_schema=json_schema_text,
-                                original_samples=samples_text
+                                json_schema=str(self.schema) if self.schema else "{}",
+                                original_samples=user_prompt
                             )}
                         ]
                         time.sleep(self._calculate_delay(attempt))
@@ -743,47 +915,19 @@ class LLMClient:
                 if len(results) != len(signatures):
                     # Pad or truncate to match
                     if len(results) < len(signatures):
-                        # Pad with "Unknown" (including required taxonomy codes)
+                        # Pad with "Unknown" (using 8-dimension format)
                         for i in range(len(results), len(signatures)):
-                            results.append({
-                                "service_name": "Unknown",
-                                "usage_type": "unknown",
-                                "risk_level": "medium",
-                                "category": "Unknown",
-                                "confidence": 0.3,
-                                "rationale_short": "LLM returned fewer results than expected",
-                                "fs_uc_code": "",
-                                "dt_code": "",
-                                "ch_code": "",
-                                "im_code": "",
-                                "rs_code": "",
-                                "ob_code": "",
-                                "ev_code": "",
-                                "taxonomy_version": "1.0"
-                            })
+                            results.append(self._get_unknown_classification())
                     else:
                         # Truncate
                         results = results[:len(signatures)]
                 
-                # Ensure all results have required taxonomy codes (列欠落禁止)
+                # Validate and normalize each result (8-dimension format)
+                validated_results = []
                 for result in results:
-                    # Set default values for missing taxonomy codes
-                    if "fs_uc_code" not in result:
-                        result["fs_uc_code"] = ""
-                    if "dt_code" not in result:
-                        result["dt_code"] = ""
-                    if "ch_code" not in result:
-                        result["ch_code"] = ""
-                    if "im_code" not in result:
-                        result["im_code"] = ""
-                    if "rs_code" not in result:
-                        result["rs_code"] = ""
-                    if "ob_code" not in result:
-                        result["ob_code"] = ""
-                    if "ev_code" not in result:
-                        result["ev_code"] = ""
-                    if "taxonomy_version" not in result:
-                        result["taxonomy_version"] = "1.0"
+                    normalized = self._normalize_and_validate_result(result)
+                    validated_results.append(normalized)
+                results = validated_results
                 
                 # Success - return results with retry summary
                 return results, retry_summary

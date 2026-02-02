@@ -19,9 +19,35 @@ dev = [
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.setuptools.package-dir]
+"" = "."
+
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+
+[tool.ruff.lint]
+# Ignore rules that conflict with existing codebase
+# These can be gradually enabled as the codebase is cleaned up
+ignore = [
+    "F541",  # f-string without placeholders (many in existing code)
+    "F401",  # imported but unused (many in existing code)
+    "F841",  # local variable assigned but never used
+    "E402",  # module level import not at top of file
+    "E722",  # bare except (many in existing code)
+    "E712",  # comparison to True/False (used in tests for clarity)
+    "F811",  # redefinition of unused variable (fixtures in tests)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Scripts may have different patterns
+"scripts/*" = ["F541"]
+# Tests may import for side effects and use pytest fixtures
+"tests/*" = ["F401", "E712", "F811"]
 
 [tool.mypy]
 python_version = "3.11"

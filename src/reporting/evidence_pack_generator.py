@@ -1,12 +1,20 @@
 """
 Evidence Pack Generator for AIMO Analysis Engine
 
-Generates Evidence Pack output (Taxonomyセット対応):
+LEGACY COMPATIBILITY MODULE
+===========================
+This module generates legacy Evidence Pack outputs (summary.json/xlsx).
+For AIMO Standard v0.1.7+ compliant Evidence Bundles, use:
+    from reporting.standard_evidence_bundle_generator import StandardEvidenceBundleGenerator
+
+This generator is now used as a derived output generator within the
+StandardEvidenceBundleGenerator, placing outputs in the derived/ subdirectory.
+
+Generates Evidence Pack output (legacy format):
 - evidence_pack_summary.json (機械可読)
 - evidence_pack_summary.xlsx or csv (人間可読)
 
-All outputs MUST include 7 codes (fs_uc_code/dt_code/ch_code/im_code/rs_code/ob_code/ev_code)
-and taxonomy_version as required columns (列欠落禁止).
+All outputs include taxonomy codes and version information.
 """
 
 import json

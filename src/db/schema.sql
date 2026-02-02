@@ -1,9 +1,14 @@
 -- AIMO Analysis Engine Database Schema (DuckDB)
--- Version: 1.4
+-- Version: 1.6
 -- 
 -- This schema defines all core tables for the AIMO engine.
 -- DuckDB supports most standard SQL with some extensions.
 -- Reference: https://duckdb.org/docs/sql/statements/create_table
+--
+-- AIMO Standard Taxonomy (v0.1.7+):
+-- - 8 dimensions: FS, UC, DT, CH, IM, RS, OB, EV
+-- - Cardinality: FS=1, IM=1, UC/DT/CH/RS/EV=1+, OB=0+
+-- - Array columns stored as canonical JSON: sorted, deduplicated
 
 --------------------------------------------------------------------------------
 -- RUNS: Execution tracking and idempotency
@@ -29,8 +34,14 @@ CREATE TABLE IF NOT EXISTS runs (
     prompt_version VARCHAR NOT NULL,
     taxonomy_version VARCHAR,                    -- Taxonomy version (for Taxonomyセット)
     evidence_pack_version VARCHAR,               -- Evidence Pack version
-    engine_spec_version VARCHAR,                 -- Engine spec version (v1.4)
+    engine_spec_version VARCHAR,                 -- Engine spec version (v1.5)
     psl_hash VARCHAR,                            -- Public Suffix List hash
+    
+    -- AIMO Standard versioning (required for audit reproducibility)
+    aimo_standard_version VARCHAR,               -- e.g., "0.1.7"
+    aimo_standard_commit VARCHAR,                -- Full git commit hash of Standard
+    aimo_standard_artifacts_dir_sha256 VARCHAR,  -- SHA256 of artifacts directory
+    aimo_standard_artifacts_zip_sha256 VARCHAR,  -- SHA256 of artifacts zip (if exists)
     
     -- Input tracking
     input_manifest_hash VARCHAR NOT NULL,        -- Hash of all input files
@@ -100,17 +111,29 @@ CREATE TABLE IF NOT EXISTS analysis_cache (
     signature_version VARCHAR,
     rule_version VARCHAR,
     prompt_version VARCHAR,
-    taxonomy_version VARCHAR,                    -- Taxonomy version (for Taxonomyセット)
+    taxonomy_version VARCHAR,                    -- Taxonomy version (legacy, use taxonomy_schema_version)
     model VARCHAR,                               -- LLM model used (if applicable)
     
-    -- Taxonomy codes (7 codes: FS-UC/DT/CH/IM/RS/OB/EV)
-    fs_uc_code VARCHAR,                          -- FS-UC code (nullable開始、出力列は必須)
-    dt_code VARCHAR,                             -- DT code
-    ch_code VARCHAR,                             -- CH code
-    im_code VARCHAR,                             -- IM code
-    rs_code VARCHAR,                             -- RS code
-    ob_code VARCHAR,                             -- OB code
-    ev_code VARCHAR,                             -- EV code
+    -- AIMO Standard Taxonomy (8 dimensions, v0.1.7+)
+    -- Single-value dimensions (exactly 1)
+    fs_code VARCHAR,                             -- FS: Functional Scope (exactly 1)
+    im_code VARCHAR,                             -- IM: Integration Mode (exactly 1)
+    -- Array dimensions (stored as canonical JSON: sorted, deduplicated)
+    uc_codes_json VARCHAR NOT NULL DEFAULT '[]', -- UC: Use Case Class (1+)
+    dt_codes_json VARCHAR NOT NULL DEFAULT '[]', -- DT: Data Type (1+)
+    ch_codes_json VARCHAR NOT NULL DEFAULT '[]', -- CH: Channel (1+)
+    rs_codes_json VARCHAR NOT NULL DEFAULT '[]', -- RS: Risk Surface (1+)
+    ev_codes_json VARCHAR NOT NULL DEFAULT '[]', -- EV: Evidence Type (1+)
+    ob_codes_json VARCHAR NOT NULL DEFAULT '[]', -- OB: Outcome/Benefit (0+, optional)
+    taxonomy_schema_version VARCHAR,             -- AIMO Standard version used (e.g., "0.1.7")
+    
+    -- Legacy taxonomy columns (deprecated, kept for backward compatibility)
+    fs_uc_code VARCHAR,                          -- DEPRECATED: Use fs_code
+    dt_code VARCHAR,                             -- DEPRECATED: Use dt_codes_json
+    ch_code VARCHAR,                             -- DEPRECATED: Use ch_codes_json
+    rs_code VARCHAR,                             -- DEPRECATED: Use rs_codes_json
+    ob_code VARCHAR,                             -- DEPRECATED: Use ob_codes_json
+    ev_code VARCHAR,                             -- DEPRECATED: Use ev_codes_json
     
     -- Status tracking
     status VARCHAR DEFAULT 'active',             -- active/needs_review/skipped/failed_permanent
@@ -168,15 +191,27 @@ CREATE TABLE IF NOT EXISTS signature_stats (
     candidate_flags VARCHAR,                     -- A/B/C flags
     sampled BOOLEAN DEFAULT FALSE,               -- Part of C sample
     
-    -- Taxonomy codes (7 codes: FS-UC/DT/CH/IM/RS/OB/EV)
-    fs_uc_code VARCHAR,                          -- FS-UC code (nullable開始、出力列は必須)
-    dt_code VARCHAR,                             -- DT code
-    ch_code VARCHAR,                             -- CH code
-    im_code VARCHAR,                             -- IM code
-    rs_code VARCHAR,                             -- RS code
-    ob_code VARCHAR,                             -- OB code
-    ev_code VARCHAR,                             -- EV code
-    taxonomy_version VARCHAR,                    -- Taxonomy version (for Taxonomyセット)
+    -- AIMO Standard Taxonomy (8 dimensions, v0.1.7+)
+    -- Single-value dimensions (exactly 1)
+    fs_code VARCHAR,                             -- FS: Functional Scope (exactly 1)
+    im_code VARCHAR,                             -- IM: Integration Mode (exactly 1)
+    -- Array dimensions (stored as canonical JSON: sorted, deduplicated)
+    uc_codes_json VARCHAR NOT NULL DEFAULT '[]', -- UC: Use Case Class (1+)
+    dt_codes_json VARCHAR NOT NULL DEFAULT '[]', -- DT: Data Type (1+)
+    ch_codes_json VARCHAR NOT NULL DEFAULT '[]', -- CH: Channel (1+)
+    rs_codes_json VARCHAR NOT NULL DEFAULT '[]', -- RS: Risk Surface (1+)
+    ev_codes_json VARCHAR NOT NULL DEFAULT '[]', -- EV: Evidence Type (1+)
+    ob_codes_json VARCHAR NOT NULL DEFAULT '[]', -- OB: Outcome/Benefit (0+, optional)
+    taxonomy_schema_version VARCHAR,             -- AIMO Standard version used (e.g., "0.1.7")
+    
+    -- Legacy taxonomy columns (deprecated, kept for backward compatibility)
+    fs_uc_code VARCHAR,                          -- DEPRECATED: Use fs_code
+    dt_code VARCHAR,                             -- DEPRECATED: Use dt_codes_json
+    ch_code VARCHAR,                             -- DEPRECATED: Use ch_codes_json
+    rs_code VARCHAR,                             -- DEPRECATED: Use rs_codes_json
+    ob_code VARCHAR,                             -- DEPRECATED: Use ob_codes_json
+    ev_code VARCHAR,                             -- DEPRECATED: Use ev_codes_json
+    taxonomy_version VARCHAR,                    -- DEPRECATED: Use taxonomy_schema_version
     
     -- Time range
     first_seen TIMESTAMP,
