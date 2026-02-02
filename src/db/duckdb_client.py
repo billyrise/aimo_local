@@ -74,14 +74,24 @@ SIGNATURE_STATS_UPDATABLE_COLS: Set[str] = {
     "cumulative_user_domain_day_max",
     "candidate_flags",
     "sampled",
+    # Legacy taxonomy columns (deprecated but kept for compatibility)
     "fs_uc_code",
     "dt_code",
     "ch_code",
-    "im_code",
     "rs_code",
     "ob_code",
     "ev_code",
     "taxonomy_version",
+    # New 8-dimension taxonomy columns (v1.6+)
+    "fs_code",
+    "im_code",
+    "uc_codes_json",
+    "dt_codes_json",
+    "ch_codes_json",
+    "rs_codes_json",
+    "ev_codes_json",
+    "ob_codes_json",
+    "taxonomy_schema_version",
     "first_seen",
     "last_seen",
 }
@@ -100,13 +110,23 @@ ANALYSIS_CACHE_UPDATABLE_COLS: Set[str] = {
     "prompt_version",
     "taxonomy_version",
     "model",
+    # Legacy taxonomy columns (deprecated but kept for compatibility)
     "fs_uc_code",
     "dt_code",
     "ch_code",
-    "im_code",
     "rs_code",
     "ob_code",
     "ev_code",
+    # New 8-dimension taxonomy columns (v1.6+)
+    "fs_code",
+    "im_code",
+    "uc_codes_json",
+    "dt_codes_json",
+    "ch_codes_json",
+    "rs_codes_json",
+    "ev_codes_json",
+    "ob_codes_json",
+    "taxonomy_schema_version",
     "error_type",
     "error_reason",
     "retry_after",
@@ -213,7 +233,7 @@ class DuckDBClient:
         self._init_schema()
     
     def _init_schema(self):
-        """Initialize database schema from schema.sql"""
+        """Initialize database schema from schema.sql and apply migrations."""
         schema_path = Path(__file__).parent.parent.parent / "src" / "db" / "schema.sql"
         if not schema_path.exists():
             raise FileNotFoundError(f"Schema file not found: {schema_path}")
@@ -228,8 +248,38 @@ class DuckDBClient:
                 schema_sql = f.read()
             conn.execute(schema_sql)
             conn.commit()
+            
+            # Apply migrations (idempotent, safe to run on every init)
+            self._apply_migrations(conn)
         finally:
             conn.close()
+    
+    def _apply_migrations(self, conn):
+        """
+        Apply database migrations.
+        
+        Migrations are idempotent: they check if changes are needed before applying.
+        This ensures safe operation on every client initialization.
+        """
+        try:
+            from db.migrations import apply_migrations, get_schema_version
+            
+            result = apply_migrations(conn)
+            
+            if result["applied"] > 0:
+                logger.info(f"Applied {result['applied']} migration(s)")
+                conn.commit()
+            
+            # Log current schema version
+            schema_version = get_schema_version(conn)
+            logger.debug(f"Database schema version: {schema_version}")
+            
+        except ImportError as e:
+            # Migrations module not available (e.g., during testing)
+            logger.debug(f"Migrations module not available: {e}")
+        except Exception as e:
+            # Log error but don't fail initialization
+            logger.warning(f"Migration error (non-fatal): {e}")
     
     def get_reader(self) -> duckdb.DuckDBPyConnection:
         """

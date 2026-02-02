@@ -255,6 +255,10 @@ class Orchestrator:
         """
         Compute deterministic run_key from input manifest and versions.
         
+        The run_key includes AIMO Standard version and artifacts hash to ensure
+        cache coherence: if the Standard changes, the run_key changes, preventing
+        cache mixing between different Standard versions.
+        
         Args:
             input_manifest_hash: Hash of input file manifest
             target_range_start: Optional date range start (YYYY-MM-DD)
@@ -263,10 +267,16 @@ class Orchestrator:
         Returns:
             SHA256 hash (run_key)
         """
-        # Build run_key input (matching spec 3.2.1)
+        # Build run_key input (matching spec 3.2.1, extended for Standard pinning)
         target_range = ""
         if target_range_start and target_range_end:
             target_range = f"{target_range_start}|{target_range_end}"
+        
+        # AIMO Standard version and hash (for cache coherence)
+        standard_version = self.aimo_standard_version
+        standard_artifacts_sha = ""
+        if self.standard_info:
+            standard_artifacts_sha = self.standard_info.artifacts_dir_sha256 or ""
         
         run_key_input = (
             f"{input_manifest_hash}|"
@@ -276,7 +286,9 @@ class Orchestrator:
             f"{self.prompt_version}|"
             f"{self.taxonomy_version}|"
             f"{self.evidence_pack_version}|"
-            f"{self.engine_spec_version}"
+            f"{self.engine_spec_version}|"
+            f"{standard_version}|"
+            f"{standard_artifacts_sha}"
         )
         
         run_key = hashlib.sha256(run_key_input.encode('utf-8')).hexdigest()
