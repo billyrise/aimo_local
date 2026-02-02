@@ -532,6 +532,67 @@ class Orchestrator:
         
         self.current_run.status = status
     
+    def generate_evidence_bundle(self) -> Optional[Path]:
+        """
+        Generate AIMO Standard v0.1.7+ compliant Evidence Bundle.
+        
+        Must be called after all analysis stages are complete, before finalize_run().
+        
+        Returns:
+            Path to the generated evidence_bundle directory, or None if failed
+        """
+        if not self.current_run:
+            raise RuntimeError("No active run context")
+        
+        try:
+            from reporting.standard_evidence_bundle_generator import (
+                StandardEvidenceBundleGenerator,
+                BundleGenerationResult
+            )
+            
+            # Create generator with Standard version
+            generator = StandardEvidenceBundleGenerator(
+                aimo_standard_version=self.aimo_standard_version
+            )
+            
+            # Output directory: work_dir/runs/<run_id>/
+            output_dir = self.current_run.work_dir
+            
+            # Get DB reader
+            db_reader = self.db_client.get_reader()
+            
+            # Generate bundle
+            result: BundleGenerationResult = generator.generate(
+                run_context=self.current_run,
+                output_dir=output_dir,
+                db_reader=db_reader,
+                include_derived=True
+            )
+            
+            # Log generation result
+            if result.validation_passed:
+                print(f"  Evidence Bundle generated: {result.bundle_path}", flush=True)
+                print(f"  Validation: PASSED", flush=True)
+            else:
+                print(f"  Evidence Bundle generated: {result.bundle_path}", flush=True)
+                print(f"  Validation: FAILED ({len(result.validation_errors)} errors)", flush=True)
+                for error in result.validation_errors[:5]:
+                    print(f"    - {error}", flush=True)
+                if len(result.validation_errors) > 5:
+                    print(f"    ... and {len(result.validation_errors) - 5} more errors", flush=True)
+                
+                # Mark run as needs_review if validation failed
+                self.current_run.status = "needs_review"
+            
+            return result.bundle_path
+            
+        except ImportError as e:
+            print(f"  WARNING: Evidence Bundle generator not available: {e}", flush=True)
+            return None
+        except Exception as e:
+            print(f"  ERROR: Evidence Bundle generation failed: {e}", flush=True)
+            return None
+    
     def should_skip_stage(self, stage: int) -> bool:
         """
         Check if stage should be skipped (already completed).
