@@ -1,5 +1,5 @@
 -- AIMO Analysis Engine Database Schema (DuckDB)
--- Version: 1.4
+-- Version: 1.5
 -- 
 -- This schema defines all core tables for the AIMO engine.
 -- DuckDB supports most standard SQL with some extensions.
@@ -29,8 +29,14 @@ CREATE TABLE IF NOT EXISTS runs (
     prompt_version VARCHAR NOT NULL,
     taxonomy_version VARCHAR,                    -- Taxonomy version (for Taxonomyセット)
     evidence_pack_version VARCHAR,               -- Evidence Pack version
-    engine_spec_version VARCHAR,                 -- Engine spec version (v1.4)
+    engine_spec_version VARCHAR,                 -- Engine spec version (v1.5)
     psl_hash VARCHAR,                            -- Public Suffix List hash
+    
+    -- AIMO Standard versioning (required for audit reproducibility)
+    aimo_standard_version VARCHAR,               -- e.g., "0.1.7"
+    aimo_standard_commit VARCHAR,                -- Full git commit hash of Standard
+    aimo_standard_artifacts_dir_sha256 VARCHAR,  -- SHA256 of artifacts directory
+    aimo_standard_artifacts_zip_sha256 VARCHAR,  -- SHA256 of artifacts zip (if exists)
     
     -- Input tracking
     input_manifest_hash VARCHAR NOT NULL,        -- Hash of all input files

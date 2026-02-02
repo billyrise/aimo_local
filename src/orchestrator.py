@@ -3,6 +3,10 @@ AIMO Analysis Engine - Orchestrator
 
 Manages execution lifecycle, checkpointing, and resume logic.
 Implements deterministic run_id generation and stage-based checkpointing.
+
+Standard Integration (v0.1.7+):
+- Each run records the AIMO Standard version, commit, and SHA256 checksums
+- This ensures audit reproducibility across Standard updates
 """
 
 import hashlib
@@ -10,10 +14,30 @@ import json
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from datetime import datetime
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from db.duckdb_client import DuckDBClient
 from signatures.signature_builder import SignatureBuilder
+
+
+@dataclass
+class StandardInfo:
+    """AIMO Standard version information for audit trail."""
+    version: str  # e.g., "0.1.7"
+    commit: str  # Full git commit hash
+    tag: str  # e.g., "v0.1.7"
+    artifacts_dir_sha256: str  # SHA256 of artifacts directory
+    artifacts_zip_sha256: Optional[str] = None  # SHA256 of zip if exists
+    
+    def to_dict(self) -> dict:
+        """Convert to dict for serialization."""
+        return {
+            "aimo_standard_version": self.version,
+            "aimo_standard_commit": self.commit,
+            "aimo_standard_tag": self.tag,
+            "aimo_standard_artifacts_dir_sha256": self.artifacts_dir_sha256,
+            "aimo_standard_artifacts_zip_sha256": self.artifacts_zip_sha256,
+        }
 
 
 @dataclass
@@ -29,6 +53,8 @@ class RunContext:
     started_at: datetime
     last_completed_stage: int = 0
     status: str = "running"
+    # Standard info (required for v0.1.7+ integration)
+    standard_info: Optional[StandardInfo] = None
 
 
 class Orchestrator:
@@ -60,7 +86,9 @@ class Orchestrator:
                  prompt_version: str = "1",
                  taxonomy_version: str = "1.0",
                  evidence_pack_version: str = "1.0",
-                 engine_spec_version: str = "1.4"):
+                 engine_spec_version: str = "1.5",
+                 aimo_standard_version: str = "0.1.7",
+                 resolve_standard: bool = True):
         """
         Initialize orchestrator.
         
@@ -72,7 +100,9 @@ class Orchestrator:
             prompt_version: Prompt version
             taxonomy_version: Taxonomy version (for Taxonomyセット)
             evidence_pack_version: Evidence Pack version
-            engine_spec_version: Engine spec version (v1.4)
+            engine_spec_version: Engine spec version (v1.5)
+            aimo_standard_version: AIMO Standard version (default: 0.1.7)
+            resolve_standard: Whether to resolve Standard artifacts (default: True)
         """
         self.db_client = db_client
         self.work_base_dir = Path(work_base_dir)
@@ -89,8 +119,42 @@ class Orchestrator:
         self.taxonomy_version = taxonomy_version
         self.evidence_pack_version = evidence_pack_version
         self.engine_spec_version = engine_spec_version
+        self.aimo_standard_version = aimo_standard_version
         
         self.current_run: Optional[RunContext] = None
+        self.standard_info: Optional[StandardInfo] = None
+        
+        # Resolve AIMO Standard artifacts (for audit trail)
+        if resolve_standard:
+            self._resolve_standard(aimo_standard_version)
+    
+    def _resolve_standard(self, version: str):
+        """
+        Resolve AIMO Standard artifacts and record version info.
+        
+        Args:
+            version: Standard version to resolve (e.g., "0.1.7")
+        """
+        try:
+            from standard_adapter.resolver import resolve_standard_artifacts
+            
+            artifacts = resolve_standard_artifacts(version=version)
+            
+            self.standard_info = StandardInfo(
+                version=artifacts.standard_version,
+                commit=artifacts.standard_commit,
+                tag=artifacts.standard_tag,
+                artifacts_dir_sha256=artifacts.artifacts_dir_sha256,
+                artifacts_zip_sha256=artifacts.artifacts_zip_sha256
+            )
+            
+            # Update taxonomy_version to match Standard
+            self.taxonomy_version = version
+            
+        except Exception as e:
+            # Log warning but don't fail - Standard resolution is important but not blocking
+            print(f"  WARNING: Failed to resolve AIMO Standard v{version}: {e}", flush=True)
+            self.standard_info = None
     
     def compute_input_manifest_hash(self, input_files: List[Path]) -> str:
         """
@@ -334,8 +398,8 @@ class Orchestrator:
             repo_root = Path(__file__).parent.parent.parent
             code_version = get_code_version(repo_root)
             
-            # Insert run record (idempotent: ON CONFLICT DO NOTHING)
-            self.db_client.insert("runs", {
+            # Build run record
+            run_record = {
                 "run_id": run_id,
                 "run_key": run_key,
                 "started_at": started_at.isoformat(),
@@ -350,8 +414,22 @@ class Orchestrator:
                 "engine_spec_version": self.engine_spec_version,
                 "input_manifest_hash": input_manifest_hash,
                 "target_range_start": target_range_start,
-                "target_range_end": target_range_end
-            }, ignore_conflict=True)
+                "target_range_end": target_range_end,
+            }
+            
+            # Add AIMO Standard info (required for audit trail)
+            if self.standard_info:
+                run_record["aimo_standard_version"] = self.standard_info.version
+                run_record["aimo_standard_commit"] = self.standard_info.commit
+                run_record["aimo_standard_artifacts_dir_sha256"] = self.standard_info.artifacts_dir_sha256
+                if self.standard_info.artifacts_zip_sha256:
+                    run_record["aimo_standard_artifacts_zip_sha256"] = self.standard_info.artifacts_zip_sha256
+                
+                # Also set standard_info in run context
+                run_context.standard_info = self.standard_info
+            
+            # Insert run record (idempotent: ON CONFLICT DO NOTHING)
+            self.db_client.insert("runs", run_record, ignore_conflict=True)
             
             # Flush to ensure run record is written
             self.db_client.flush()
