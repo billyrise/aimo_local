@@ -96,13 +96,34 @@ def calculate_directory_sha256(directory: Path) -> str:
 
 
 def run_git_command(args: list[str], cwd: Optional[Path] = None) -> tuple[int, str, str]:
-    """Run a git command and return (returncode, stdout, stderr)."""
+    """
+    Run a git command and return (returncode, stdout, stderr).
+    
+    Automatically adds safe.directory config when cwd is specified to handle
+    CI environments where repository ownership may differ.
+    """
+    # Build command with safe.directory config if cwd is specified
+    if cwd is not None:
+        git_cmd = ["git", "-c", f"safe.directory={cwd}"] + args
+    else:
+        git_cmd = ["git"] + args
+    
     result = subprocess.run(
-        ["git"] + args,
+        git_cmd,
         cwd=cwd,
         capture_output=True,
         text=True
     )
+    
+    # Provide helpful error message for safe.directory issues
+    if result.returncode != 0 and "safe.directory" in result.stderr:
+        safe_dir_hint = (
+            "\n\nHint: If you encounter 'unsafe repository' errors, add the following:\n"
+            f"  git config --global --add safe.directory {cwd or '$(pwd)'}\n"
+            "For CI environments, this is typically done in the workflow setup step."
+        )
+        return result.returncode, result.stdout.strip(), result.stderr.strip() + safe_dir_hint
+    
     return result.returncode, result.stdout.strip(), result.stderr.strip()
 
 

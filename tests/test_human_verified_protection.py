@@ -27,7 +27,7 @@ pytestmark = pytest.mark.skip(
            "See README_TESTS.md."
 )
 
-from src.db.duckdb_client import DuckDBClient
+from db.duckdb_client import DuckDBClient
 
 
 @pytest.fixture

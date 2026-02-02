@@ -78,6 +78,9 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v"
+markers = [
+    "ci: tests required for CI gate",
+]
 
 [tool.rye]
 dev-dependencies = [

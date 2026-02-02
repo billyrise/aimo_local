@@ -9,7 +9,7 @@ Tests priority-based budget control:
 
 import pytest
 from datetime import datetime
-from src.llm.budget import BudgetController, CandidatePriority
+from llm.budget import BudgetController, CandidatePriority
 
 
 class TestBudgetController:
