@@ -374,18 +374,31 @@ class RuleClassifier:
         """
         Build classification dict from matched rule.
         
-        Returns None if rule cannot fill all required taxonomy dimensions.
-        Rules must provide complete 8-dimension taxonomy to be used.
+        For backward compatibility with legacy rules that don't have complete
+        8-dimension taxonomy, this method fills missing dimensions with default
+        codes (XX-099) and sets _needs_review flag.
         
         Args:
             rule: Matched rule dict
             match_reason: How the match was made
         
         Returns:
-            Classification dict (8-dimension format) or None if incomplete
+            Classification dict (8-dimension format), always returns a result
         """
+        # Default fallback codes for missing taxonomy dimensions
+        DEFAULT_FS = "FS-099"
+        DEFAULT_IM = "IM-099"
+        DEFAULT_UC = ["UC-099"]
+        DEFAULT_DT = ["DT-099"]
+        DEFAULT_CH = ["CH-099"]
+        DEFAULT_RS = ["RS-099"]
+        DEFAULT_EV = ["EV-099"]
+        
         # Get taxonomy codes from rule
         taxonomy_codes = rule.get("taxonomy_codes", {})
+        
+        # Track if we need to use defaults (indicates incomplete rule)
+        needs_review = False
         
         # Check if rule has new 8-dimension format
         has_new_format = "fs_code" in taxonomy_codes or "uc_codes" in taxonomy_codes
@@ -422,16 +435,29 @@ class RuleClassifier:
             # UC is not available in legacy format
             uc_codes = []
         
-        # Check cardinality requirements
-        # FS and IM must be exactly 1
-        if not fs_code or not im_code:
-            # Cannot satisfy cardinality - pass to LLM
-            return None
-        
-        # UC, DT, CH, RS, EV must have at least 1
-        if not uc_codes or not dt_codes or not ch_codes or not rs_codes or not ev_codes:
-            # Cannot satisfy cardinality - pass to LLM
-            return None
+        # Fill missing dimensions with defaults and flag for review
+        if not fs_code:
+            fs_code = DEFAULT_FS
+            needs_review = True
+        if not im_code:
+            im_code = DEFAULT_IM
+            needs_review = True
+        if not uc_codes:
+            uc_codes = DEFAULT_UC
+            needs_review = True
+        if not dt_codes:
+            dt_codes = DEFAULT_DT
+            needs_review = True
+        if not ch_codes:
+            ch_codes = DEFAULT_CH
+            needs_review = True
+        if not rs_codes:
+            rs_codes = DEFAULT_RS
+            needs_review = True
+        if not ev_codes:
+            ev_codes = DEFAULT_EV
+            needs_review = True
+        # OB codes are optional (0+), no default needed
         
         # Build classification
         classification = {
@@ -458,6 +484,9 @@ class RuleClassifier:
             
             # Version
             "aimo_standard_version": self.aimo_standard_version,
+            
+            # Review flag for incomplete taxonomy
+            "_needs_review": needs_review,
             
             # Legacy fields for backward compatibility (deprecated)
             "fs_uc_code": "DEPRECATED",
