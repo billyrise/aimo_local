@@ -178,7 +178,33 @@ validation_result.json: {"passed": false, "errors": [...]}
 **原因**: Engine の出力が Standard 仕様と不一致
 **対処**: Engine 側を修正。Validator が正。
 
-## 6. 連絡先
+## 6. リポジトリ衛生
+
+### .gitignore で除外されているもの
+
+以下は `.gitignore` で除外済み。コミットしないこと：
+
+- `.venv/` - Python 仮想環境
+- `.pytest_cache/` - pytest キャッシュ
+- `*.duckdb`, `*.sqlite` - ローカル DB
+- `data/work/`, `data/output/` - 処理データ
+
+### 誤って追跡してしまった場合
+
+もし `.venv/` 等を誤って Git 追跡してしまった場合：
+
+```bash
+# 追跡解除（ファイルは残る）
+git rm -r --cached .venv
+git rm -r --cached .pytest_cache
+
+# コミット
+git commit -m "chore: remove accidentally tracked files"
+```
+
+**注意**: `--cached` を忘れると実ファイルも削除される。
+
+## 7. 連絡先
 
 - Standard repo: github.com/billyrise/aimo-standard
 - Engine repo: github.com/billyrise/aimo_local

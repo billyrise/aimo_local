@@ -25,13 +25,19 @@ wheels/
 .installed.cfg
 *.egg
 MANIFEST
+.venv/
 venv/
 env/
 ENV/
 
-# DuckDB
+# Test cache
+.pytest_cache/
+
+# Databases
 *.duckdb
 *.duckdb.wal
+*.sqlite
+*.sqlite3
 
 # Data directories (processed data, cache, output)
 data/cache/
