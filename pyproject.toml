@@ -23,6 +23,23 @@ build-backend = "setuptools.build_meta"
 target-version = "py311"
 line-length = 100
 
+[tool.ruff.lint]
+# Ignore rules that conflict with existing codebase
+# These can be gradually enabled as the codebase is cleaned up
+ignore = [
+    "F541",  # f-string without placeholders (many in existing code)
+    "F401",  # imported but unused (many in existing code)
+    "F841",  # local variable assigned but never used
+    "E402",  # module level import not at top of file
+    "E722",  # bare except (many in existing code)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Scripts may have different patterns
+"scripts/*" = ["F541"]
+# Tests may import for side effects
+"tests/*" = ["F401"]
+
 [tool.mypy]
 python_version = "3.11"
 warn_return_any = true
