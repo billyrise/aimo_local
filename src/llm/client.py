@@ -5,6 +5,10 @@ Provides LLM-based service classification using Structured Outputs (JSON Schema)
 Supports multiple providers (OpenAI, Azure OpenAI, Anthropic) with retry logic and error handling.
 
 All LLM requests are deterministic: same input → same output (via caching).
+
+Environment Variables:
+- AIMO_DISABLE_LLM=1: Completely disable LLM calls. Any call raises LLMDisabledError.
+  Used in CI/testing to ensure LLM is not invoked accidentally.
 """
 
 import os
@@ -21,6 +25,32 @@ import jsonschema
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+
+
+class LLMDisabledError(Exception):
+    """
+    Raised when LLM calls are disabled via AIMO_DISABLE_LLM=1.
+    
+    This error is raised immediately when any LLM API call is attempted
+    while LLM is disabled. This ensures tests fail fast if they
+    accidentally try to use LLM.
+    """
+    
+    def __init__(self, method_name: str):
+        super().__init__(
+            f"LLM call attempted ({method_name}) but AIMO_DISABLE_LLM=1 is set. "
+            "LLM calls are completely disabled. Use stub_classifier for testing."
+        )
+
+
+def _check_llm_disabled():
+    """
+    Check if LLM is disabled via environment variable.
+    
+    Returns:
+        True if AIMO_DISABLE_LLM=1 is set
+    """
+    return os.getenv("AIMO_DISABLE_LLM", "").lower() in ("1", "true", "yes")
 
 # Suppress urllib3 SSL warnings for LibreSSL compatibility
 # urllib3 1.x works with LibreSSL, but may show warnings in some environments
@@ -766,7 +796,14 @@ class LLMClient:
             Tuple of (classifications, retry_summary):
             - classifications: List of classification dicts (one per signature)
             - retry_summary: Dict with retry metadata (attempts, backoff_ms_total, last_error_code, rate_limit_events)
+        
+        Raises:
+            LLMDisabledError: If AIMO_DISABLE_LLM=1 is set
         """
+        # Check if LLM is disabled
+        if _check_llm_disabled():
+            raise LLMDisabledError("analyze_batch")
+        
         if not signatures:
             return [], {
                 "attempts": 0,
