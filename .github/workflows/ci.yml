@@ -123,10 +123,12 @@ jobs:
           
           # Initialize with test DB
           db_path = Path('data/output/ci_test.duckdb')
+          work_dir = Path('data/work')
+          work_dir.mkdir(parents=True, exist_ok=True)
           db_client = DuckDBClient(str(db_path))
           
           # Create orchestrator
-          orch = Orchestrator(db_client, aimo_standard_version='0.1.7')
+          orch = Orchestrator(db_client, work_base_dir=work_dir, aimo_standard_version='0.1.7')
           
           # Verify Standard adapter is available
           from standard_adapter.resolver import resolve_standard_artifacts
