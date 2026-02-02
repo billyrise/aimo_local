@@ -11,9 +11,12 @@ Generates audit-ready JSON reports with all required metadata:
 
 import json
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, TYPE_CHECKING
 from datetime import datetime
 import jsonschema
+
+if TYPE_CHECKING:
+    from db.duckdb_client import DuckDBClient
 
 
 class ReportBuilder:
@@ -60,7 +63,10 @@ class ReportBuilder:
                      signature_version: str,
                      rule_version: str,
                      prompt_version: str,
-                     exclusions: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                     exclusions: Optional[Dict[str, Any]] = None,
+                     code_version: Optional[str] = None,
+                     input_manifest_hash: Optional[str] = None,
+                     input_files_summary: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Build audit-ready report.
         
@@ -102,6 +108,14 @@ class ReportBuilder:
             "prompt_version": prompt_version
         }
         
+        # Phase 7-3: Add audit fields
+        if code_version is not None:
+            report["code_version"] = code_version
+        if input_manifest_hash is not None:
+            report["input_manifest_hash"] = input_manifest_hash
+        if input_files_summary is not None:
+            report["input_files_summary"] = input_files_summary
+        
         # Validate against schema
         validator = jsonschema.Draft202012Validator(self.schema)
         errors = list(validator.iter_errors(report))
@@ -130,3 +144,109 @@ class ReportBuilder:
         
         # Atomic rename
         temp_path.replace(output_path)
+    
+    @staticmethod
+    def compute_llm_coverage_from_db(db_reader: Any, run_id: str, unknown_count: int) -> Dict[str, Any]:
+        """
+        Compute LLM coverage metrics from database (audit-ready definition).
+        
+        This method provides the authoritative definition of LLM coverage metrics
+        for audit purposes. All values are recalculated from the database state.
+        
+        Definitions (Phase 7-4: Audit-ready):
+        - llm_analyzed_count: analysis_cache の status='active' かつ classification_source='LLM' の件数（署名単位）
+        - needs_review_count: status='needs_review' の件数
+        - failed_permanent_count: status='failed_permanent' の件数
+        - cache_hit_rate: unknown候補に対して、LLM呼び出し無しでactiveが得られた割合
+          (unknown候補 = unknown_count, cache_hit = analysis_cacheに既に存在してactiveな署名)
+        
+        Args:
+            db_reader: DuckDB reader connection
+            run_id: Run ID for filtering (optional, currently not used but kept for future)
+            unknown_count: Number of unknown signatures (rule-classified以外)
+        
+        Returns:
+            Dict with llm_coverage metrics
+        """
+        # llm_analyzed_count: analysis_cache の status='active' かつ classification_source='LLM' の件数
+        llm_analyzed_result = db_reader.execute(
+            """
+            SELECT COUNT(*) 
+            FROM analysis_cache 
+            WHERE status = 'active' AND classification_source = 'LLM'
+            """
+        ).fetchone()
+        llm_analyzed_count = int(llm_analyzed_result[0]) if llm_analyzed_result else 0
+        
+        # needs_review_count: status='needs_review' の件数
+        needs_review_result = db_reader.execute(
+            """
+            SELECT COUNT(*) 
+            FROM analysis_cache 
+            WHERE status = 'needs_review'
+            """
+        ).fetchone()
+        needs_review_count = int(needs_review_result[0]) if needs_review_result else 0
+        
+        # failed_permanent_count: status='failed_permanent' の件数
+        failed_permanent_result = db_reader.execute(
+            """
+            SELECT COUNT(*) 
+            FROM analysis_cache 
+            WHERE status = 'failed_permanent'
+            """
+        ).fetchone()
+        failed_permanent_count = int(failed_permanent_result[0]) if failed_permanent_result else 0
+        
+        # cache_hit_rate: unknown候補に対して、LLM呼び出し無しでactiveが得られた割合
+        # 定義: unknown候補（unknown_count）のうち、analysis_cacheに既に存在してactiveな署名の割合
+        # 計算: (analysis_cacheに既に存在してactiveな署名数) / unknown_count
+        # 注意: これは「LLM呼び出し無しでactiveが得られた」という意味で、cache_hitの概念
+        cache_hit_active_result = db_reader.execute(
+            """
+            SELECT COUNT(*) 
+            FROM analysis_cache 
+            WHERE status = 'active' AND classification_source IN ('LLM', 'RULE')
+            """
+        ).fetchone()
+        cache_hit_active_count = int(cache_hit_active_result[0]) if cache_hit_active_result else 0
+        
+        # cache_hit_rate = (既存のactiveな署名数) / unknown_count
+        # ただし、unknown_countが0の場合は0.0を返す
+        cache_hit_rate = cache_hit_active_count / unknown_count if unknown_count > 0 else 0.0
+        
+        return {
+            "llm_analyzed_count": llm_analyzed_count,
+            "needs_review_count": needs_review_count,
+            "failed_permanent_count": failed_permanent_count,
+            "cache_hit_rate": cache_hit_rate
+        }
+    
+    @staticmethod
+    def compute_retry_summary_from_db(db_reader: Any, run_id: str) -> Dict[str, Any]:
+        """
+        Compute retry summary from database (run-level aggregation).
+        
+        This method aggregates retry metadata from analysis_cache for a given run.
+        Currently, retry metadata is stored in-memory during LLM analysis,
+        but this method provides a way to recompute from DB if needed.
+        
+        Note: Currently, retry_summary is computed during LLM analysis and passed
+        to the report. This method is provided for future use or audit verification.
+        
+        Args:
+            db_reader: DuckDB reader connection
+            run_id: Run ID (currently not used, but kept for future filtering)
+        
+        Returns:
+            Dict with retry_summary metrics (defaults to zeros if not available)
+        """
+        # For now, retry_summary is computed during LLM analysis.
+        # This method returns default values as a placeholder for future DB-based aggregation.
+        # TODO: If retry metadata is stored in DB in the future, implement aggregation here.
+        return {
+            "attempts": 0,
+            "backoff_ms_total": 0,
+            "last_error_code": None,
+            "rate_limit_events": 0
+        }

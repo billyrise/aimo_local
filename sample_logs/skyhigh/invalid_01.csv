@@ -1,0 +1,3 @@
+timestamp,user,url,action
+2024-01-17T10:00:00Z,user001,,allowed
+INVALID_TIMESTAMP,user002,https://www.example.com,blocked

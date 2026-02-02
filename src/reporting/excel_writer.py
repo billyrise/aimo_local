@@ -6,6 +6,7 @@ Uses xlsxwriter with constant_memory=True to handle large datasets.
 """
 
 import json
+import yaml
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
@@ -303,6 +304,9 @@ class ExcelWriter:
         
         # 10. Policy Gaps
         self._create_policy_gaps_sheet(report_data, db_reader, run_id)
+        
+        # 11. Cost Reduction Simulation (Tier1商品要件)
+        self._create_cost_reduction_sheet(report_data, db_reader, run_id)
         
         # Close workbook
         self.workbook.close()
@@ -1313,3 +1317,402 @@ This report is audit-ready and includes all required metadata for reproducibilit
         data = []
         
         self.write_table_data_chunked(sheet, row, columns, data)
+    
+    def _create_cost_reduction_sheet(self, report_data: Dict[str, Any],
+                                     db_reader, run_id: str):
+        """
+        Create Cost Reduction Simulation sheet (Tier1商品要件).
+        
+        This sheet provides:
+        1. Current estimated annual cost (usage × pricing)
+        2. Potential cost reduction (duplicate/dormant usage elimination)
+        3. User/department breakdown
+        """
+        sheet = self.add_sheet("CostReduction", "Cost reduction simulation for AI app usage")
+        
+        row = 0
+        
+        # Load cost reduction configuration
+        config_path = Path(__file__).parent.parent.parent / "config" / "cost_reduction.yaml"
+        cost_config = {}
+        if config_path.exists():
+            try:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    cost_config = yaml.safe_load(f) or {}
+            except Exception as e:
+                print(f"Warning: Failed to load cost reduction config: {e}", flush=True)
+        
+        service_pricing = cost_config.get("service_pricing", {})
+        reduction_assumptions = cost_config.get("reduction_assumptions", {})
+        default_genai = service_pricing.get("default_genai", {
+            "cost_per_user_per_month_usd": 15.0,
+            "cost_per_access_usd": 0.0
+        })
+        
+        # Get vendor from report_data to locate Parquet files
+        vendor = report_data.get("vendor", "")
+        if not vendor:
+            # No data available
+            sheet.write(row, 0, "N/A (vendor not found)", self.formats['data'])
+            return
+        
+        # Find Parquet files for this run_id and vendor
+        processed_dir = Path(__file__).parent.parent.parent / "data" / "processed"
+        vendor_dir = processed_dir / f"vendor={vendor}"
+        
+        # Collect all Parquet files for this vendor
+        parquet_files = []
+        if vendor_dir.exists():
+            for date_dir in vendor_dir.iterdir():
+                if date_dir.is_dir() and date_dir.name.startswith("date="):
+                    for parquet_file in date_dir.glob("*.parquet"):
+                        parquet_files.append(str(parquet_file))
+        
+        if not parquet_files:
+            # No Parquet files found
+            sheet.write(row, 0, "N/A (no Parquet files found)", self.formats['data'])
+            return
+        
+        # Query user/department AI app usage from Parquet files
+        try:
+            # Escape single quotes in paths and build array string
+            escaped_paths = [p.replace("'", "''") for p in parquet_files]
+            parquet_paths_str = "', '".join(escaped_paths)
+            
+            # Query user/department usage statistics
+            query = f"""
+            WITH events AS (
+                SELECT 
+                    user_id,
+                    COALESCE(user_dept, 'Unknown') as user_dept,
+                    url_signature,
+                    event_time
+                FROM read_parquet(['{parquet_paths_str}'])
+                WHERE user_id IS NOT NULL AND user_id != ''
+            ),
+            usage_stats AS (
+                SELECT 
+                    e.user_id,
+                    e.user_dept,
+                    e.url_signature,
+                    ac.service_name,
+                    ac.usage_type,
+                    COUNT(*) as access_count,
+                    MIN(CAST(e.event_time AS TIMESTAMP)) as first_access,
+                    MAX(CAST(e.event_time AS TIMESTAMP)) as last_access
+                FROM events e
+                LEFT JOIN signature_stats ss ON e.url_signature = ss.url_signature AND ss.run_id = ?
+                LEFT JOIN analysis_cache ac ON e.url_signature = ac.url_signature AND ac.status = 'active'
+                WHERE ac.usage_type = 'genai' OR ac.usage_type IS NULL
+                GROUP BY e.user_id, e.user_dept, e.url_signature, ac.service_name, ac.usage_type
+            ),
+            user_service_summary AS (
+                SELECT 
+                    user_id,
+                    user_dept,
+                    service_name,
+                    SUM(access_count) as total_accesses,
+                    MIN(first_access) as first_access,
+                    MAX(last_access) as last_access
+                FROM usage_stats
+                GROUP BY user_id, user_dept, service_name
+            )
+            SELECT 
+                user_dept,
+                user_id,
+                service_name,
+                total_accesses,
+                first_access,
+                last_access
+            FROM user_service_summary
+            ORDER BY user_dept, user_id, service_name
+            """
+            
+            result = db_reader.execute(query, [run_id]).fetchall()
+            
+            # Aggregate data for cost calculation
+            user_service_map: Dict[Tuple[str, str], Dict[str, Any]] = {}
+            dept_service_map: Dict[Tuple[str, str], Dict[str, Any]] = {}
+            
+            for row_data in result:
+                dept, user_id, service_name, total_accesses, first_access, last_access = row_data
+                service_name = service_name or "Unknown"
+                
+                # User-level aggregation
+                user_key = (user_id, dept)
+                if user_key not in user_service_map:
+                    user_service_map[user_key] = {
+                        "user_id": user_id,
+                        "department": dept,
+                        "services": {},
+                        "total_accesses": 0
+                    }
+                
+                if service_name not in user_service_map[user_key]["services"]:
+                    user_service_map[user_key]["services"][service_name] = {
+                        "accesses": 0,
+                        "first_access": first_access,
+                        "last_access": last_access
+                    }
+                
+                user_service_map[user_key]["services"][service_name]["accesses"] += total_accesses or 0
+                user_service_map[user_key]["total_accesses"] += total_accesses or 0
+                
+                # Department-level aggregation
+                dept_key = (dept, service_name)
+                if dept_key not in dept_service_map:
+                    dept_service_map[dept_key] = {
+                        "department": dept,
+                        "service_name": service_name,
+                        "user_count": 0,
+                        "total_accesses": 0
+                    }
+                
+                dept_service_map[dept_key]["user_count"] += 1
+                dept_service_map[dept_key]["total_accesses"] += total_accesses or 0
+            
+            # Calculate costs and reductions
+            # 1. Current Cost Summary
+            sheet.write(row, 0, "Current Cost Summary", self.formats['subheader'])
+            row += 1
+            
+            summary_columns = ["Metric", "Value", "Unit"]
+            row = self.write_table_header(sheet, row, summary_columns)
+            
+            total_current_cost_monthly = 0.0
+            total_users = len(user_service_map)
+            total_services = len(set(service_name for dept, service_name in dept_service_map.keys()))
+            
+            # Calculate monthly cost per user/service
+            for user_key, user_data in user_service_map.items():
+                for service_name, service_data in user_data["services"].items():
+                    # Get pricing for this service
+                    pricing = service_pricing.get(service_name, default_genai)
+                    cost_per_user = pricing.get("cost_per_user_per_month_usd", 0.0)
+                    cost_per_access = pricing.get("cost_per_access_usd", 0.0)
+                    
+                    # Calculate cost: subscription-based or per-access
+                    if cost_per_user > 0:
+                        service_cost = cost_per_user
+                    else:
+                        service_cost = service_data["accesses"] * cost_per_access
+                    
+                    total_current_cost_monthly += service_cost
+            
+            total_current_cost_annual = total_current_cost_monthly * 12
+            
+            summary_data = [
+                {"Metric": "Total Users", "Value": total_users, "Unit": "users"},
+                {"Metric": "Total Services", "Value": total_services, "Unit": "services"},
+                {"Metric": "Current Monthly Cost (Estimated)", "Value": f"${total_current_cost_monthly:,.2f}", "Unit": "USD"},
+                {"Metric": "Current Annual Cost (Estimated)", "Value": f"${total_current_cost_annual:,.2f}", "Unit": "USD"},
+            ]
+            
+            self.write_table_data_chunked(sheet, row, summary_columns, summary_data)
+            row += len(summary_data) + 2
+            
+            # 2. Cost Reduction Potential
+            sheet.write(row, 0, "Cost Reduction Potential", self.formats['subheader'])
+            row += 1
+            
+            reduction_columns = ["Reduction Type", "Description", "Potential Reduction", "Weight"]
+            row = self.write_table_header(sheet, row, reduction_columns)
+            
+            # Calculate reduction potential (simple weighted sum)
+            duplicate_weight = reduction_assumptions.get("duplicate_usage", {}).get("weight", 0.3)
+            dormant_weight = reduction_assumptions.get("dormant_usage", {}).get("weight", 0.2)
+            consolidation_weight = reduction_assumptions.get("enterprise_consolidation", {}).get("weight", 0.25)
+            
+            # Duplicate usage: users with multiple similar services
+            duplicate_users = 0
+            for user_key, user_data in user_service_map.items():
+                if len(user_data["services"]) >= 2:
+                    duplicate_users += 1
+            
+            duplicate_reduction = duplicate_users * duplicate_weight * (total_current_cost_monthly / total_users if total_users > 0 else 0)
+            
+            # Dormant usage: users with low activity
+            dormant_threshold = reduction_assumptions.get("dormant_usage", {}).get("threshold_accesses_per_month", 5)
+            dormant_users = 0
+            for user_key, user_data in user_service_map.items():
+                # Estimate monthly accesses (assuming data covers ~1 month)
+                monthly_accesses = user_data["total_accesses"]
+                if monthly_accesses < dormant_threshold:
+                    dormant_users += 1
+            
+            dormant_reduction = dormant_users * dormant_weight * (total_current_cost_monthly / total_users if total_users > 0 else 0)
+            
+            # Enterprise consolidation: department-level consolidation
+            consolidation_depts = 0
+            dept_user_counts: Dict[str, int] = {}
+            for user_key, user_data in user_service_map.items():
+                dept = user_data["department"]
+                dept_user_counts[dept] = dept_user_counts.get(dept, 0) + 1
+            
+            consolidation_threshold = reduction_assumptions.get("enterprise_consolidation", {}).get("threshold_department_users", 10)
+            for dept, user_count in dept_user_counts.items():
+                if user_count >= consolidation_threshold:
+                    consolidation_depts += 1
+            
+            consolidation_reduction = consolidation_depts * consolidation_weight * (total_current_cost_monthly / len(dept_user_counts) if dept_user_counts else 0)
+            
+            # Total reduction (simple weighted sum)
+            total_reduction_monthly = duplicate_reduction + dormant_reduction + consolidation_reduction
+            total_reduction_annual = total_reduction_monthly * 12
+            
+            reduction_data = [
+                {
+                    "Reduction Type": "Duplicate Usage",
+                    "Description": f"Users using multiple services ({duplicate_users} users)",
+                    "Potential Reduction": f"${duplicate_reduction:,.2f}/month",
+                    "Weight": f"{duplicate_weight:.0%}"
+                },
+                {
+                    "Reduction Type": "Dormant Usage",
+                    "Description": f"Users with low activity ({dormant_users} users, <{dormant_threshold} accesses/month)",
+                    "Potential Reduction": f"${dormant_reduction:,.2f}/month",
+                    "Weight": f"{dormant_weight:.0%}"
+                },
+                {
+                    "Reduction Type": "Enterprise Consolidation",
+                    "Description": f"Department-level consolidation ({consolidation_depts} departments, >={consolidation_threshold} users)",
+                    "Potential Reduction": f"${consolidation_reduction:,.2f}/month",
+                    "Weight": f"{consolidation_weight:.0%}"
+                },
+                {
+                    "Reduction Type": "Total Potential Reduction",
+                    "Description": "Simple weighted sum of all reduction types",
+                    "Potential Reduction": f"${total_reduction_monthly:,.2f}/month (${total_reduction_annual:,.2f}/year)",
+                    "Weight": "N/A"
+                }
+            ]
+            
+            self.write_table_data_chunked(sheet, row, reduction_columns, reduction_data)
+            row += len(reduction_data) + 2
+            
+            # 3. Department Breakdown
+            sheet.write(row, 0, "Department Breakdown", self.formats['subheader'])
+            row += 1
+            
+            dept_columns = ["Department", "Users", "Services", "Monthly Cost (Est.)", "Annual Cost (Est.)", "Reduction Potential"]
+            row = self.write_table_header(sheet, row, dept_columns)
+            
+            dept_summary: Dict[str, Dict[str, Any]] = {}
+            for dept_key, dept_data in dept_service_map.items():
+                dept = dept_data["department"]
+                if dept not in dept_summary:
+                    dept_summary[dept] = {
+                        "users": set(),
+                        "services": set(),
+                        "monthly_cost": 0.0
+                    }
+                
+                dept_summary[dept]["services"].add(dept_data["service_name"])
+                # Estimate cost for this service in this department
+                pricing = service_pricing.get(dept_data["service_name"], default_genai)
+                cost_per_user = pricing.get("cost_per_user_per_month_usd", 0.0)
+                cost_per_access = pricing.get("cost_per_access_usd", 0.0)
+                
+                if cost_per_user > 0:
+                    service_cost = cost_per_user * dept_data["user_count"]
+                else:
+                    service_cost = dept_data["total_accesses"] * cost_per_access
+                
+                dept_summary[dept]["monthly_cost"] += service_cost
+            
+            # Count users per department
+            for user_key, user_data in user_service_map.items():
+                dept = user_data["department"]
+                if dept in dept_summary:
+                    dept_summary[dept]["users"].add(user_data["user_id"])
+            
+            dept_data_list = []
+            for dept, summary in dept_summary.items():
+                user_count = len(summary["users"])
+                service_count = len(summary["services"])
+                monthly_cost = summary["monthly_cost"]
+                annual_cost = monthly_cost * 12
+                
+                # Calculate reduction potential for this department
+                dept_reduction = 0.0
+                if user_count >= consolidation_threshold:
+                    dept_reduction = monthly_cost * consolidation_weight
+                
+                dept_data_list.append({
+                    "Department": dept,
+                    "Users": user_count,
+                    "Services": service_count,
+                    "Monthly Cost (Est.)": f"${monthly_cost:,.2f}",
+                    "Annual Cost (Est.)": f"${annual_cost:,.2f}",
+                    "Reduction Potential": f"${dept_reduction:,.2f}/month"
+                })
+            
+            # Sort by monthly cost descending
+            dept_data_list.sort(key=lambda x: float(x["Monthly Cost (Est.)"].replace("$", "").replace(",", "")), reverse=True)
+            
+            self.write_table_data_chunked(sheet, row, dept_columns, dept_data_list)
+            row += len(dept_data_list) + 2
+            
+            # 4. Service Usage Summary
+            sheet.write(row, 0, "Service Usage Summary", self.formats['subheader'])
+            row += 1
+            
+            service_columns = ["Service", "Users", "Total Accesses", "Monthly Cost (Est.)", "Annual Cost (Est.)"]
+            row = self.write_table_header(sheet, row, service_columns)
+            
+            service_summary: Dict[str, Dict[str, Any]] = {}
+            for dept_key, dept_data in dept_service_map.items():
+                service_name = dept_data["service_name"]
+                if service_name not in service_summary:
+                    service_summary[service_name] = {
+                        "users": set(),
+                        "total_accesses": 0
+                    }
+                
+                # Count unique users (approximate - would need full join for exact count)
+                service_summary[service_name]["total_accesses"] += dept_data["total_accesses"]
+            
+            # Count users per service from user_service_map
+            for user_key, user_data in user_service_map.items():
+                for service_name in user_data["services"].keys():
+                    if service_name not in service_summary:
+                        service_summary[service_name] = {
+                            "users": set(),
+                            "total_accesses": 0
+                        }
+                    service_summary[service_name]["users"].add(user_data["user_id"])
+            
+            service_data_list = []
+            for service_name, summary in service_summary.items():
+                user_count = len(summary["users"])
+                total_accesses = summary["total_accesses"]
+                
+                # Calculate cost
+                pricing = service_pricing.get(service_name, default_genai)
+                cost_per_user = pricing.get("cost_per_user_per_month_usd", 0.0)
+                cost_per_access = pricing.get("cost_per_access_usd", 0.0)
+                
+                if cost_per_user > 0:
+                    monthly_cost = cost_per_user * user_count
+                else:
+                    monthly_cost = total_accesses * cost_per_access
+                
+                annual_cost = monthly_cost * 12
+                
+                service_data_list.append({
+                    "Service": service_name,
+                    "Users": user_count,
+                    "Total Accesses": total_accesses,
+                    "Monthly Cost (Est.)": f"${monthly_cost:,.2f}",
+                    "Annual Cost (Est.)": f"${annual_cost:,.2f}"
+                })
+            
+            # Sort by monthly cost descending
+            service_data_list.sort(key=lambda x: float(x["Monthly Cost (Est.)"].replace("$", "").replace(",", "")), reverse=True)
+            
+            self.write_table_data_chunked(sheet, row, service_columns, service_data_list)
+            
+        except Exception as e:
+            # On error, log and show error message
+            print(f"Warning: Failed to generate cost reduction simulation: {e}", flush=True)
+            sheet.write(row, 0, f"Error generating cost reduction simulation: {str(e)[:100]}", self.formats['data'])

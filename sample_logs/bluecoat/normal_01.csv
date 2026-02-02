@@ -1,0 +1,4 @@
+date,time,c-ip,cs-username,url,cs-bytes,sc-bytes,cs-method,sc-status,action
+2024-01-17,10:00:00,192.168.1.100,user001,https://www.google.com/search?q=test,1024,2048,GET,200,-
+2024-01-17,10:01:00,192.168.1.101,user002,https://www.example.com/api/users/12345,2048,4096,POST,201,-
+2024-01-17,10:02:00,192.168.1.100,user001,https://www.openai.com/v1/chat/completions,4096,8192,POST,200,-

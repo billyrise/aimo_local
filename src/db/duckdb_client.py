@@ -3,15 +3,157 @@ DuckDB Client for AIMO Analysis Engine
 
 Provides single-writer connection management and UPSERT helpers.
 All DuckDB writes must go through this client to ensure single-writer semantics.
+
+UPSERT仕様（恒久対策として固定）:
+- すべてのUPSERTで INSERT ... ON CONFLICT DO UPDATE SET ... を使用
+- INSERT OR REPLACE は禁止（DELETE→INSERT相当のため監査・来歴が破壊される）
+- UPDATE句の右辺は必ず EXCLUDED.<col> を使用
+- 更新対象列（update_columns）から以下を強制除外:
+  a) conflict_cols（衝突ターゲット列）
+  b) PK列
+  c) indexed_columns（インデックス付き列）
+- 除外時はWARNログを出力
+- 監査用にUPSERT情報をJSONログで記録
+
+参考:
+- DuckDB公式: https://duckdb.org/docs/sql/statements/insert#on-conflict-clause
+- DuckDBインデックス制限: UPDATEがDELETE+INSERTに変換されるケースあり
 """
 
 import os
+import json
 import threading
+import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 from queue import Queue, Empty
 import duckdb
 from datetime import datetime
+
+
+# Configure logger for UPSERT audit and is_human_verified protection
+logger = logging.getLogger(__name__)
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+
+
+# =============================================================================
+# UPSERT許可リスト方式（恒久対策）
+# 各テーブルごとに「更新して良い列」を明示的に定義
+# これにより、誤って危険な列を更新しようとしても自動で弾く
+# =============================================================================
+
+# runs テーブル: 更新可能な列
+RUNS_UPDATABLE_COLS: Set[str] = {
+    "finished_at",
+    "last_completed_stage",
+    "total_events",
+    "unique_signatures",
+    "cache_hit_count",
+    "llm_sent_count",
+    "code_version",
+    "psl_hash",
+}
+
+# signature_stats テーブル: 更新可能な列
+SIGNATURE_STATS_UPDATABLE_COLS: Set[str] = {
+    "norm_host",
+    "norm_path_template",
+    "dest_domain",
+    "bytes_sent_bucket",
+    "access_count",
+    "unique_users",
+    "bytes_sent_sum",
+    "bytes_sent_max",
+    "bytes_sent_p95",
+    "bytes_received_sum",
+    "burst_max_5min",
+    "cumulative_user_domain_day_max",
+    "candidate_flags",
+    "sampled",
+    "fs_uc_code",
+    "dt_code",
+    "ch_code",
+    "im_code",
+    "rs_code",
+    "ob_code",
+    "ev_code",
+    "taxonomy_version",
+    "first_seen",
+    "last_seen",
+}
+
+# analysis_cache テーブル: 更新可能な列
+# Note: status, usage_type, updated_at, is_human_verified はインデックス列なので除外
+ANALYSIS_CACHE_UPDATABLE_COLS: Set[str] = {
+    "service_name",
+    "risk_level",
+    "category",
+    "confidence",
+    "rationale_short",
+    "classification_source",
+    "signature_version",
+    "rule_version",
+    "prompt_version",
+    "taxonomy_version",
+    "model",
+    "fs_uc_code",
+    "dt_code",
+    "ch_code",
+    "im_code",
+    "rs_code",
+    "ob_code",
+    "ev_code",
+    "error_type",
+    "error_reason",
+    "retry_after",
+    "failure_count",
+    "last_error_at",
+    "analysis_date",
+    "created_at",
+}
+
+# input_files テーブル: 更新可能な列
+INPUT_FILES_UPDATABLE_COLS: Set[str] = {
+    "file_path",
+    "file_size",
+    "file_hash",
+    "vendor",
+    "log_type",
+    "min_time",
+    "max_time",
+    "row_count",
+    "parse_error_count",
+    "ingested_at",
+}
+
+# テーブルごとの許可リストマップ
+TABLE_UPDATABLE_COLS: Dict[str, Set[str]] = {
+    "runs": RUNS_UPDATABLE_COLS,
+    "signature_stats": SIGNATURE_STATS_UPDATABLE_COLS,
+    "analysis_cache": ANALYSIS_CACHE_UPDATABLE_COLS,
+    "input_files": INPUT_FILES_UPDATABLE_COLS,
+}
+
+# テーブルごとのインデックス列（更新禁止）
+# DuckDB制限: ON CONFLICT DO UPDATE SET でインデックス列を更新するとエラー
+TABLE_INDEXED_COLS: Dict[str, Set[str]] = {
+    "analysis_cache": {"status", "usage_type", "updated_at", "is_human_verified"},
+    "runs": {"status", "started_at"},
+    "signature_stats": set(),  # run_id, url_signature は複合PKなので別管理
+    "input_files": set(),
+}
+
+# テーブルごとのPK列
+TABLE_PK_COLS: Dict[str, Set[str]] = {
+    "runs": {"run_id"},
+    "signature_stats": {"run_id", "url_signature"},  # 複合PK
+    "analysis_cache": {"url_signature"},
+    "input_files": {"file_id"},
+}
 
 
 class DuckDBClient:
@@ -23,6 +165,7 @@ class DuckDBClient:
     - Multiple readers can connect concurrently
     - UPSERT operations use ON CONFLICT DO UPDATE (INSERT OR REPLACE is prohibited)
     - Duplicate keys within same batch are deduplicated (last one wins)
+    - is_human_verified=true rows are never overwritten (P0: human verification protection)
     """
     
     def __init__(self, db_path: str, temp_directory: Optional[str] = None):
@@ -45,7 +188,14 @@ class DuckDBClient:
         self.temp_directory = Path(temp_directory).absolute()
         self.temp_directory.mkdir(parents=True, exist_ok=True)
         
-        # ログ出力: temp_directoryのパスを明示
+        # temp_directory 設定ログ（監査・運用品質として固定）
+        # ops/runbook.md と一致する形式で出力
+        temp_dir_log = {
+            "db_path": str(self.db_path),
+            "temp_directory": str(self.temp_directory),
+            "note": "DuckDB temp_directory is required for WAL and spill files"
+        }
+        logger.info(f"DuckDB initialized: {json.dumps(temp_dir_log)}")
         print(f"DuckDB temp_directory: {self.temp_directory}", flush=True)
         
         # Writer connection (single thread)
@@ -199,6 +349,11 @@ class DuckDBClient:
                         where_clause=item["where_clause"],
                         where_values=item.get("where_values")
                     )
+                elif op_type == "execute_sql":
+                    self._execute_sql(
+                        sql=item["sql"],
+                        params=item.get("params", [])
+                    )
                 successful_ops += 1
             except Exception as item_error:
                 # For runs table INSERT with ignore_conflict, log warning but continue
@@ -221,6 +376,17 @@ class DuckDBClient:
                     error_msg = str(item_error)
                     print(f"  WARNING: Failed to update run status: {item_error}", flush=True)
                     print(f"  Continuing (report generation completed successfully)...", flush=True)
+                    # Continue to next item (don't raise)
+                    failed_ops += 1
+                    continue
+                # For execute_sql operations (UPDATE signature_stats, index operations, etc.)
+                # Log warning but continue (some operations are non-critical)
+                elif op_type == "execute_sql":
+                    error_msg = str(item_error)
+                    sql_preview = item.get("sql", "unknown")[:100]  # First 100 chars for logging
+                    print(f"  WARNING: Failed to execute SQL: {item_error}", flush=True)
+                    print(f"  SQL preview: {sql_preview}...", flush=True)
+                    print(f"  Continuing with remaining operations...", flush=True)
                     # Continue to next item (don't raise)
                     failed_ops += 1
                     continue
@@ -330,11 +496,22 @@ class DuckDBClient:
         """
         Execute UPSERT using ON CONFLICT DO UPDATE (INSERT OR REPLACE is prohibited).
         
+        恒久対策として以下を仕様固定:
+        - INSERT ... ON CONFLICT(<conflict_cols>) DO UPDATE SET ... を使用
+        - UPDATE句の右辺は必ず EXCLUDED.<col> を使用（直接値埋め込み禁止）
+        - 以下の列は強制除外:
+          a) conflict_cols（衝突ターゲット列）
+          b) PK列
+          c) indexed_columns（インデックス付き列）
+          d) 許可リスト外の列（TABLE_UPDATABLE_COLS）
+        - 除外時はWARNログを出力
+        - 監査用にUPSERT情報をJSONログで記録
+        
         Args:
             table: Table name
             data: Dictionary of column: value
             conflict_key: Primary key column name (required)
-            update_columns: Columns to update on conflict (if None, updates all non-PK columns)
+            update_columns: Columns to update on conflict (if None, uses all updatable columns)
         
         Note:
             For analysis_cache table, if is_human_verified=true exists, skip update
@@ -343,9 +520,10 @@ class DuckDBClient:
         if not self._writer_conn:
             raise RuntimeError("Writer connection not initialized")
         
-        # Check is_human_verified for analysis_cache table (spec 9.4)
+        # =========================================
+        # Step 1: is_human_verified 保護チェック
+        # =========================================
         if table == "analysis_cache":
-            # Determine conflict key (primary key)
             if not conflict_key:
                 if "url_signature" in data:
                     conflict_key = "url_signature"
@@ -354,19 +532,34 @@ class DuckDBClient:
             
             url_sig = data.get(conflict_key)
             if url_sig:
-                # Check if existing record has is_human_verified=true
-                check_query = f"SELECT is_human_verified FROM {table} WHERE {conflict_key} = ?"
+                check_query = f"SELECT is_human_verified, classification_source, service_name FROM {table} WHERE {conflict_key} = ?"
                 existing = self._writer_conn.execute(check_query, [url_sig]).fetchone()
                 
                 if existing and existing[0] is True:
-                    # Skip update if is_human_verified=true (人手確定を最優先)
-                    print(f"  WARNING: Skipping UPSERT for {url_sig} (is_human_verified=true)", flush=True)
+                    existing_source = existing[1] if len(existing) > 1 else "unknown"
+                    existing_service = existing[2] if len(existing) > 2 else "unknown"
+                    attempted_source = data.get("classification_source", "unknown")
+                    attempted_service = data.get("service_name", "unknown")
+                    
+                    logger.warning(
+                        f"Skipping UPSERT for url_signature={url_sig} "
+                        f"(is_human_verified=true protection): "
+                        f"existing=[source={existing_source}, service={existing_service}], "
+                        f"attempted=[source={attempted_source}, service={attempted_service}]"
+                    )
                     return  # Skip this UPSERT operation
         
-        # Determine conflict key (primary key)
+        # =========================================
+        # Step 2: conflict_key の決定
+        # =========================================
         if not conflict_key:
-            # Try to infer from common PK names
-            if "run_id" in data:
+            if table in TABLE_PK_COLS:
+                pk_cols = TABLE_PK_COLS[table]
+                if len(pk_cols) == 1:
+                    conflict_key = next(iter(pk_cols))
+                else:
+                    conflict_key = ", ".join(sorted(pk_cols))
+            elif "run_id" in data:
                 conflict_key = "run_id"
             elif "url_signature" in data:
                 conflict_key = "url_signature"
@@ -375,64 +568,89 @@ class DuckDBClient:
             else:
                 raise ValueError(f"conflict_key must be specified for table {table}")
         
-        # Handle composite primary keys
-        # For signature_stats, PK is (run_id, url_signature)
-        # DuckDB's ON CONFLICT can handle composite keys
+        # signature_stats は常に複合PK
         if table == "signature_stats":
-            # Always use composite key for signature_stats
-            if conflict_key != "run_id, url_signature":
-                conflict_key = "run_id, url_signature"
+            conflict_key = "run_id, url_signature"
         
-        # Build column list
+        # =========================================
+        # Step 3: 各種除外列の計算
+        # =========================================
         columns = list(data.keys())
-        placeholders = ", ".join(["?" for _ in columns])
-        column_list = ", ".join(columns)
+        pk_columns = set(col.strip() for col in conflict_key.split(","))
+        indexed_columns = TABLE_INDEXED_COLS.get(table, set())
+        updatable_cols = TABLE_UPDATABLE_COLS.get(table, set())
         
-        # Determine update columns (all non-PK columns if not specified)
-        # For composite PK, exclude all PK columns
-        pk_columns = [col.strip() for col in conflict_key.split(",")]
+        # 要求されたupdate_columnsを記録（監査用）
+        requested_update_cols = set(update_columns) if update_columns else set(columns) - pk_columns
+        
+        # =========================================
+        # Step 4: update_columns の決定（許可リスト方式）
+        # =========================================
         if update_columns is None:
-            # Exclude all PK columns from update
+            # 自動検出: データ内の列から、許可リストに含まれるもののみ
             update_columns = [col for col in columns if col not in pk_columns]
+        else:
+            update_columns = list(update_columns)
         
-        # Ensure PK columns are never in update_columns
-        update_columns = [col for col in update_columns if col not in pk_columns]
-        
-        # DuckDB limitation: ON CONFLICT DO UPDATE SET cannot update columns
-        # that are referenced by indexes. Exclude indexed columns from update.
-        # Known indexed columns per table (from schema.sql):
-        indexed_columns = {
-            "analysis_cache": ["status", "usage_type", "updated_at", "is_human_verified"],  # All indexed columns
-            "runs": ["status", "started_at"],  # idx_runs_status, idx_runs_started
+        # 強制除外リスト
+        excluded_cols: Dict[str, List[str]] = {
+            "pk_columns": [],
+            "indexed_columns": [],
+            "not_in_allowlist": [],
         }
         
-        # Only exclude indexed columns if update_columns was not explicitly provided
-        # If explicitly provided, assume the caller knows what they're doing
-        if table in indexed_columns and update_columns is None:
-            # Exclude indexed columns from update_columns (only when auto-detecting)
-            update_columns = [col for col in columns if col not in pk_columns]
-            update_columns = [col for col in update_columns if col not in indexed_columns[table]]
-        elif table in indexed_columns and update_columns is not None:
-            # update_columns was explicitly provided - respect it (caller knows what they're doing)
-            # But still exclude PK columns
-            update_columns = [col for col in update_columns if col not in pk_columns]
+        applied_update_cols = []
+        for col in update_columns:
+            # a) PK列は除外
+            if col in pk_columns:
+                excluded_cols["pk_columns"].append(col)
+                continue
+            
+            # b) インデックス列は除外
+            if col in indexed_columns:
+                excluded_cols["indexed_columns"].append(col)
+                continue
+            
+            # c) 許可リストにない列は除外（テーブルが許可リストに定義されている場合のみ）
+            if updatable_cols and col not in updatable_cols:
+                excluded_cols["not_in_allowlist"].append(col)
+                continue
+            
+            applied_update_cols.append(col)
         
-        # INSERT OR REPLACEのフォールバックは全面禁止（例外なし）
-        # 監査・整合性・来歴の観点でDELETE→INSERT相当が再発するため。
-        # インデックス付きカラムは更新対象から除外済み。更新対象が空の場合は設計ミスとして扱う。
-        if not update_columns:
+        # =========================================
+        # Step 5: 除外警告ログ
+        # =========================================
+        all_excluded = []
+        for reason, cols in excluded_cols.items():
+            if cols:
+                all_excluded.extend(cols)
+                logger.warning(
+                    f"UPSERT {table}: Excluded columns from update ({reason}): {cols}"
+                )
+        
+        # =========================================
+        # Step 6: 更新列がない場合はエラー
+        # =========================================
+        if not applied_update_cols:
             raise ValueError(
-                f"Cannot UPSERT {table}: No updatable columns (all columns are PK or indexed). "
-                f"Indexed columns are immutable by design. If you need to update indexed columns, "
-                f"consider: (1) Make indexed columns immutable, (2) Use history table pattern, "
-                f"or (3) Remove index from updatable columns."
+                f"Cannot UPSERT {table}: No updatable columns after filtering. "
+                f"Excluded: {all_excluded}. "
+                f"PK columns: {pk_columns}. "
+                f"Indexed columns: {indexed_columns}. "
+                f"Allowed columns: {updatable_cols if updatable_cols else 'all (no allowlist)'}. "
+                f"If you need to update excluded columns, review TABLE_UPDATABLE_COLS or TABLE_INDEXED_COLS."
             )
         
-        # ON CONFLICT DO UPDATE (preserves PK, updates specified columns)
-        # INSERT OR REPLACEは使用禁止
-        # DuckDB requires EXCLUDED keyword for ON CONFLICT DO UPDATE
+        # =========================================
+        # Step 7: SQL構築（EXCLUDED を使用）
+        # =========================================
+        placeholders = ", ".join(["?" for _ in columns])
+        column_list = ", ".join(columns)
         values = [data.get(col) for col in columns]
-        update_clause = ", ".join([f"{col} = EXCLUDED.{col}" for col in update_columns])
+        
+        # UPDATE句は必ず EXCLUDED.<col> を使用（直接値埋め込み禁止）
+        update_clause = ", ".join([f"{col} = EXCLUDED.{col}" for col in applied_update_cols])
         
         sql = f"""
             INSERT INTO {table} ({column_list})
@@ -440,26 +658,34 @@ class DuckDBClient:
             ON CONFLICT ({conflict_key}) DO UPDATE SET {update_clause}
         """
         
-        # Debug: Log SQL for runs table to diagnose the error
-        if table == "runs":
-            print(f"DEBUG: UPSERT SQL for runs table:", flush=True)
-            print(f"  conflict_key: {conflict_key}", flush=True)
-            print(f"  pk_columns: {pk_columns}", flush=True)
-            print(f"  update_columns: {update_columns}", flush=True)
-            print(f"  Full SQL:\n{sql}", flush=True)
-            print(f"  values: {values}", flush=True)
+        # =========================================
+        # Step 8: 監査ログ（JSON形式）
+        # =========================================
+        audit_log = {
+            "table": table,
+            "conflict_cols": list(pk_columns),
+            "requested_update_cols": list(requested_update_cols),
+            "applied_update_cols": applied_update_cols,
+            "excluded_cols": {k: v for k, v in excluded_cols.items() if v},
+            "row_count": 1,
+        }
+        logger.debug(f"UPSERT audit: {json.dumps(audit_log)}")
         
+        # =========================================
+        # Step 9: SQL実行
+        # =========================================
         try:
             self._writer_conn.execute(sql, values)
         except Exception as e:
-            # Enhanced error message for debugging
-            if table == "runs":
-                print(f"DEBUG: Error executing UPSERT for runs table:", flush=True)
-                print(f"  Full SQL:\n{sql}", flush=True)
-                print(f"  values: {values}", flush=True)
-                print(f"  update_columns: {update_columns}", flush=True)
-                print(f"  pk_columns: {pk_columns}", flush=True)
-                print(f"  conflict_key: {conflict_key}", flush=True)
+            # エラー時は詳細ログを出力（ただし値は除く：機密保護）
+            error_log = {
+                "table": table,
+                "conflict_key": conflict_key,
+                "applied_update_cols": applied_update_cols,
+                "excluded_cols": {k: v for k, v in excluded_cols.items() if v},
+                "error": str(e),
+            }
+            logger.error(f"UPSERT failed: {json.dumps(error_log)}")
             raise
     
     def _execute_insert(self, table: str, data: Dict[str, Any], ignore_conflict: bool = False):
@@ -587,6 +813,48 @@ class DuckDBClient:
             "where_clause": where_clause,
             "where_values": where_values
         })
+    
+    def execute_sql(self, sql: str, params: Optional[List[Any]] = None):
+        """
+        Queue a raw SQL execution (non-blocking, Writer Queue経由).
+        
+        P0: All DB writes must go through Writer Queue to prevent DB corruption
+        in parallel execution scenarios.
+        
+        Args:
+            sql: SQL statement to execute
+            params: Optional list of parameters for parameterized query
+        """
+        self._start_writer()
+        
+        self._write_queue.put({
+            "op": "execute_sql",
+            "sql": sql,
+            "params": params or []
+        })
+    
+    def _execute_sql(self, sql: str, params: List[Any]):
+        """
+        Execute raw SQL statement (internal, Writer Queue経由).
+        
+        Args:
+            sql: SQL statement
+            params: Parameters for parameterized query
+        """
+        if not self._writer_conn:
+            raise RuntimeError("Writer connection not initialized")
+        
+        try:
+            if params:
+                self._writer_conn.execute(sql, params)
+            else:
+                self._writer_conn.execute(sql)
+        except Exception as e:
+            # Re-raise with more context
+            raise RuntimeError(
+                f"SQL execution failed: {e}. "
+                f"SQL: {sql}, Params: {params}"
+            ) from e
     
     def flush(self, timeout: float = 30.0):
         """

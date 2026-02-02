@@ -1,0 +1,4 @@
+timestamp,user,srcip,dstip,url,action,bytes_uploaded,bytes_downloaded,method,status
+2024-01-17T10:00:00Z,user001,192.168.1.100,172.217.164.110,MALFORMED_URL,ALLOW,1024,2048,GET,200
+2024-01-17T10:01:00Z,,192.168.1.101,93.184.216.34,https://www.example.com/api/users/12345,ALLOW,2048,4096,POST,201
+2024-01-17T10:02:00Z,user001,INVALID_IP,13.107.42.14,https://www.openai.com/v1/chat/completions,ALLOW,4096,8192,POST,200
