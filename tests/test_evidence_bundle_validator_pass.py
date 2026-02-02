@@ -28,6 +28,9 @@ from typing import Optional
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
+# Import pinned Standard version for consistency
+from standard_adapter.pinning import PINNED_STANDARD_VERSION
+
 
 @pytest.fixture(autouse=True)
 def contract_test_environment():
@@ -61,7 +64,7 @@ def contract_test_environment():
 @dataclass
 class MockStandardInfo:
     """Mock Standard info for run context."""
-    standard_version: str = "0.1.7"
+    standard_version: str = PINNED_STANDARD_VERSION
     standard_commit: str = "test_commit_hash"
     artifacts_dir_sha256: str = "test_sha256"
     artifacts_zip_sha256: str = "test_zip_sha256"
@@ -82,7 +85,7 @@ class MockRunContext:
     signature_version: str = "1.0"
     rule_version: str = "1"
     prompt_version: str = "1"
-    taxonomy_version: str = "0.1.7"
+    taxonomy_version: str = PINNED_STANDARD_VERSION
     evidence_pack_version: str = "1.0"
     engine_spec_version: str = "1.5"
     code_version: str = "contract_test"
@@ -119,14 +122,14 @@ def db_with_minimal_data(temp_db, minimal_run_context):
     """
     Create DB with minimal valid data for Evidence Bundle generation.
     
-    Uses Standard v0.1.7 compliant codes obtained from stub classifier logic.
+    Uses Standard-compliant codes obtained from stub classifier logic.
     """
     run_id = minimal_run_context.run_id
     
     # Get valid codes from Standard Adapter (same logic as stub_classifier)
     try:
         from standard_adapter.taxonomy import get_taxonomy_adapter
-        adapter = get_taxonomy_adapter(version="0.1.7")
+        adapter = get_taxonomy_adapter(version=PINNED_STANDARD_VERSION)
         
         # Get first valid code for each dimension
         fs_code = adapter.get_allowed_codes("FS")[0]
@@ -189,7 +192,7 @@ def db_with_minimal_data(temp_db, minimal_run_context):
         "rs_codes_json": json.dumps([rs_code]),
         "ev_codes_json": json.dumps([ev_code]),
         "ob_codes_json": "[]",
-        "taxonomy_schema_version": "0.1.7",
+        "taxonomy_schema_version": PINNED_STANDARD_VERSION,
         "status": "active"
     }, conflict_key="url_signature")
     
@@ -216,7 +219,7 @@ class TestEvidenceBundleValidatorPass:
         """
         from reporting.standard_evidence_bundle_generator import StandardEvidenceBundleGenerator
         
-        generator = StandardEvidenceBundleGenerator(aimo_standard_version="0.1.7")
+        generator = StandardEvidenceBundleGenerator(aimo_standard_version=PINNED_STANDARD_VERSION)
         
         result = generator.generate(
             run_context=minimal_run_context,
@@ -252,7 +255,7 @@ class TestEvidenceBundleValidatorPass:
         """
         from reporting.standard_evidence_bundle_generator import StandardEvidenceBundleGenerator
         
-        generator = StandardEvidenceBundleGenerator(aimo_standard_version="0.1.7")
+        generator = StandardEvidenceBundleGenerator(aimo_standard_version=PINNED_STANDARD_VERSION)
         
         result = generator.generate(
             run_context=minimal_run_context,
@@ -305,7 +308,7 @@ class TestEvidenceBundleValidatorPass:
         """
         from reporting.standard_evidence_bundle_generator import StandardEvidenceBundleGenerator
         
-        generator = StandardEvidenceBundleGenerator(aimo_standard_version="0.1.7")
+        generator = StandardEvidenceBundleGenerator(aimo_standard_version=PINNED_STANDARD_VERSION)
         
         result = generator.generate(
             run_context=minimal_run_context,
@@ -319,8 +322,8 @@ class TestEvidenceBundleValidatorPass:
         
         assert "aimo_standard_version" in validation, \
             "validation_result.json must contain 'aimo_standard_version'"
-        assert validation["aimo_standard_version"] == "0.1.7", \
-            f"Expected Standard version 0.1.7, got {validation['aimo_standard_version']}"
+        assert validation["aimo_standard_version"] == PINNED_STANDARD_VERSION, \
+            f"Expected Standard version {PINNED_STANDARD_VERSION}, got {validation['aimo_standard_version']}"
     
     def test_bundle_result_no_content_validation_errors(
         self, db_with_minimal_data, minimal_run_context
@@ -336,7 +339,7 @@ class TestEvidenceBundleValidatorPass:
         """
         from reporting.standard_evidence_bundle_generator import StandardEvidenceBundleGenerator
         
-        generator = StandardEvidenceBundleGenerator(aimo_standard_version="0.1.7")
+        generator = StandardEvidenceBundleGenerator(aimo_standard_version=PINNED_STANDARD_VERSION)
         
         result = generator.generate(
             run_context=minimal_run_context,
@@ -389,7 +392,7 @@ class TestValidatorFailureDetection:
         """
         from reporting.standard_evidence_bundle_generator import StandardEvidenceBundleGenerator
         
-        generator = StandardEvidenceBundleGenerator(aimo_standard_version="0.1.7")
+        generator = StandardEvidenceBundleGenerator(aimo_standard_version=PINNED_STANDARD_VERSION)
         
         result = generator.generate(
             run_context=minimal_run_context,

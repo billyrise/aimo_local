@@ -62,13 +62,17 @@ jobs:
       
       # Run tests (no ignores - all tests must pass)
       # Legacy tests that need API access have pytest.mark.skip internally
+      # Contract E2E tests verify Standard compliance without LLM
       - name: Run tests
         run: |
           pytest -q --tb=short
         env:
           PYTHONPATH: ${{ github.workspace }}/src
-          # Ensure LLM is disabled in CI (stub classifier will be used for contract tests)
+          # LLM is disabled - use stub classifier for deterministic results
           AIMO_DISABLE_LLM: "1"
+          # Stub classifier for contract E2E tests (Standard-compliant codes)
+          AIMO_CLASSIFIER: "stub"
+          # Standard version is fixed via AIMO_STANDARD_VERSION (global env)
           # AIMO_ALLOW_SKIP_PINNING is intentionally NOT set - pinning must be enforced
   
   e2e-smoke:
