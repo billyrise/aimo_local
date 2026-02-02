@@ -406,9 +406,9 @@ class TestValidatorFailureDetection:
         
         # Check all required fields
         required_fields = ["passed", "status", "aimo_standard_version", "errors", "error_count"]
-        for field in required_fields:
-            assert field in validation, \
-                f"validation_result.json missing required field: {field}"
+        for field_name in required_fields:
+            assert field_name in validation, \
+                f"validation_result.json missing required field: {field_name}"
         
         # Type checks
         assert isinstance(validation["passed"], bool), \
