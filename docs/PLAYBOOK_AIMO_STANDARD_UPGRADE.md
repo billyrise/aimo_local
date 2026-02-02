@@ -260,6 +260,148 @@ src/
 
 ---
 
+## 8. Triage: When CI fails after bumping AIMO Standard
+
+CIが失敗した時、開発者が"症状から原因へ"最短で辿り着くためのトリアージ表です。
+
+**重要な区別:**
+- **🚨 事故系**: Standard運用側の問題。Engine側でpin更新してはならない（原則）
+- **✅ 正しい落ち方**: Standardが更新されEngineが追従対応すべき状態
+- **⚠️ 境界系**: 原因切り分けが重要。正常か異常かは文脈による
+
+### 8.1 トリアージ表
+
+#### A) 事故系（運用不正 — Engine側でpin更新禁止）
+
+| Severity | Symptom (where it fails) | What it usually means | Quick checks (copy/paste) | Typical fix | Done when |
+|:--------:|--------------------------|----------------------|---------------------------|-------------|-----------|
+| **P0** | `Commit mismatch: expected X, got Y` in `enforce_pinning()` | Standard側でタグがforce-pushされた（**事故**） | `cd third_party/aimo-standard && git log --oneline -5 v0.1.7` | Standard運用チームに報告。**Engine側でpin更新してはならない** | Standardがタグを修正し、再checkout後にcommitが一致 |
+| **P0** | `Artifacts SHA mismatch: expected X, got Y` | 同一versionなのにzipや辞書ファイルが差し替えられた（**事故**） | `python scripts/sync_aimo_standard.py --version 0.1.7` で表示されるSHAを確認 | Standard側でリリース手順を是正・再リリース | 再syncでSHAが `pinning.py` と一致 |
+| **P1** | `FileNotFoundError: third_party/aimo-standard/...` or `submodule not initialized` | CIでsubmodulesが取得されていない。checkout設定不備 | `git submodule status` | `.github/workflows/ci.yml` で `submodules: true` を設定。`sync_aimo_standard.py` でdist生成手順確認 | submoduleが存在し、artifacts dirが生成済み |
+| **P1** | `KeyError: 'taxonomy'` or `Artifacts directory not found` | `sync_aimo_standard.py` 未実行 or 生成失敗 | `ls -la ~/.cache/aimo/standard/v0.1.7/` | `python scripts/sync_aimo_standard.py --version 0.1.7` を実行 | artifacts dirが存在しschema/辞書が読める |
+
+#### B) 正しい落ち方系（Standard更新 — Engine追従対応が必要）
+
+| Severity | Symptom (where it fails) | What it usually means | Quick checks (copy/paste) | Typical fix | Done when |
+|:--------:|--------------------------|----------------------|---------------------------|-------------|-----------|
+| **P1** | `validate_assignment failed: code 'XX-999' not in allowed codes` | コードが廃止または定義変更された | `python -c "from src.standard_adapter.taxonomy import TaxonomyAdapter; a=TaxonomyAdapter(); print(a.get_allowed_codes('XX'))"` | `rule_classifier.py`、`stub_classifier.py`、LLMプロンプトのコード参照を更新 | `validate_assignment()`が全コードでpass |
+| **P1** | `validate_assignment failed: cardinality violation (expected 1+, got 0)` | Cardinality定義が変更された（例: OB optional→required） | `python -c "from src.standard_adapter.taxonomy import TaxonomyAdapter; a=TaxonomyAdapter(); print(a.get_cardinality_rules())"` | `llm/schemas/analysis_output.schema.json` の minItems/maxItems を更新 | 全dimensionでcardinality検証pass |
+| **P1** | `jsonschema.ValidationError` in `standard_evidence_bundle_generator.py` | Evidence schemaが構造変更された（必須フィールド追加等） | `python -c "import pathlib; p=pathlib.Path('~/.cache/aimo/standard/v0.1.7').expanduser(); print('\\n'.join(str(x) for x in p.rglob('*.schema.json')))"` | `reporting/standard_evidence_bundle_generator.py` を新schema構造に合わせて改修 | Bundle生成後のschema validation pass |
+| **P2** | `validation_result.json` shows `"status": "failed"` with rule failures | Validatorのルールが追加または厳格化された。生成物の整合性不足 | `python -c "from src.standard_adapter.validator_runner import run_validation; print(run_validation('<bundle_dir>'))"` | 不足フィールドの追加、checksum/manifest計算の見直し | `run_validation()` が `"status": "passed"` を返す |
+| **P2** | `FileNotFoundError` or `KeyError` in `TaxonomyAdapter` / `SchemaAdapter` | artifacts内部構造が変更された（パス名・配置変更） | `find ~/.cache/aimo/standard/v0.1.7 -type f -name '*.json'` | `standard_adapter/taxonomy.py`、`schemas.py` の探索パスを更新 | Adapterが全辞書・schemaを正常ロード |
+| **P2** | Dimension追加で `KeyError: 'XX_codes'` | 新dimensionが追加された（8次元→9次元等） | `python -c "from src.standard_adapter.taxonomy import TaxonomyAdapter; a=TaxonomyAdapter(); print(a.get_dimensions())"` | DB schema、LLM schema、Bundle生成、Rule分類器に新dimension追加 | 新dimension含めた全次元処理がpass |
+
+#### C) 境界系（原因切り分けが重要）
+
+| Severity | Symptom (where it fails) | What it usually means | Quick checks (copy/paste) | Typical fix | Done when |
+|:--------:|--------------------------|----------------------|---------------------------|-------------|-----------|
+| **P2** | Contract E2E fails only in CI (ローカルは通る) | submodule未取得、キャッシュdir権限問題、HOME設定違い | `env \| grep -E '^(HOME\|AIMO_\|XDG_)'` (CIログで確認) | CI yml で `HOME`、cache dir 設定を明示。submodules: true 確認 | CIとローカルで同一結果 |
+| **P2** | `run_key changed unexpectedly` or cache misses spike | Standard SHA混入による当然の変化（正常）か、SHA計算の不安定（異常） | `python -c "from src.standard_adapter.resolver import resolve_standard_artifacts; r=resolve_standard_artifacts('0.1.7'); print(r.artifacts_dir_sha256)"` | SHA計算のcanonical化、run_key構成レビュー。正常なら「Standard更新で当然」と判断 | run_keyが同一入力で安定 |
+| **P3** | Performance regression (validator slow, schema load slow) | artifacts肥大化、探索の総当たりが遅い | `time python -c "from src.standard_adapter.taxonomy import TaxonomyAdapter; TaxonomyAdapter()"` | 探索結果キャッシュ導入、インデックスファイル追加（ただしStandardが正の原則を崩さない） | ロード時間が許容範囲内 |
+
+### 8.2 診断を早くする共通コマンド集
+
+以下のコマンドをコピペして診断に使用してください。
+
+#### 1) Standard解決とpin確認
+
+```bash
+# 現在のresolve結果を表示（version, commit, SHA含む）
+python -c "from src.standard_adapter.resolver import resolve_standard_artifacts; print(resolve_standard_artifacts('0.1.7'))"
+```
+
+#### 2) artifacts SHA表示（sync）
+
+```bash
+# sync実行 + SHA確認（pinning.pyの値と比較）
+python scripts/sync_aimo_standard.py --version 0.1.7
+```
+
+#### 3) artifacts内のschema探索
+
+```bash
+# キャッシュ内のschemaファイル一覧を表示
+python -c "import pathlib; p=pathlib.Path('~/.cache/aimo/standard/v0.1.7').expanduser(); print('\\n'.join(str(x) for x in p.rglob('*.schema.json')))"
+
+# 辞書ファイル一覧を表示
+python -c "import pathlib; p=pathlib.Path('~/.cache/aimo/standard/v0.1.7').expanduser(); print('\\n'.join(str(x) for x in p.rglob('*.csv')))"
+```
+
+#### 4) taxonomy許可コード確認
+
+```bash
+# 全dimensionの許可コード一覧
+python -c "
+from src.standard_adapter.taxonomy import TaxonomyAdapter
+adapter = TaxonomyAdapter()
+for dim in ['FS', 'IM', 'UC', 'DT', 'CH', 'RS', 'EV', 'OB']:
+    codes = adapter.get_allowed_codes(dim)
+    print(f'{dim}: {len(codes)} codes')
+"
+```
+
+#### 5) contract E2E（LLM無効＋stub分類）
+
+```bash
+# LLM呼び出しなしでエンジン実行。Bundle生成とvalidator実行まで確認
+AIMO_DISABLE_LLM=1 AIMO_CLASSIFIER=stub python src/main.py sample_logs/paloalto_sample.csv --vendor paloalto
+```
+
+#### 6) validator単体実行
+
+```bash
+# 特定のEvidence Bundleディレクトリを検証
+python -c "
+import sys
+from src.standard_adapter.validator_runner import run_validation
+result = run_validation(sys.argv[1])
+print(result)
+" <evidence_bundle_dir>
+```
+
+#### 7) submodule状態確認
+
+```bash
+# submoduleのチェックアウト状態
+git submodule status
+
+# submoduleの最新コミット確認
+cd third_party/aimo-standard && git log --oneline -3 && cd ../..
+```
+
+#### 8) pinning.py の現在値確認
+
+```bash
+# 現在pinされているversion/commit/SHA
+grep -E "^PINNED_" src/standard_adapter/pinning.py
+```
+
+### 8.3 判断フローチャート
+
+```
+CIが失敗した
+    │
+    ├─ "Commit mismatch" or "SHA mismatch" ?
+    │   └─ YES → 🚨 事故系。Standard運用チームに報告。Engine側でpin更新禁止
+    │
+    ├─ "submodule not initialized" or "FileNotFoundError: third_party/..." ?
+    │   └─ YES → CI設定を確認。submodules: true、sync実行
+    │
+    ├─ "validate_assignment failed" or "cardinality violation" ?
+    │   └─ YES → ✅ 正しい落ち方。Taxonomy定義を確認し、Engine側のコード/schema更新
+    │
+    ├─ "jsonschema.ValidationError" in evidence bundle generator ?
+    │   └─ YES → ✅ 正しい落ち方。Evidence schemaを確認し、生成ロジック更新
+    │
+    ├─ "validation_result.json shows failed" ?
+    │   └─ YES → ✅ 正しい落ち方。Validatorが正。生成物をStandardに合わせる
+    │
+    └─ ローカルは通るがCIだけ落ちる ?
+        └─ YES → ⚠️ 環境差異。HOME/cache dir/submodule状態を確認
+```
+
+---
+
 **作成日**: 2026-02-02
 **適用 Standard Version**: v0.1.7
 **次回更新予定**: Standard Major バージョンアップ時
