@@ -41,6 +41,10 @@ data/processed/
 data/input/
 logs/
 
+# Operations directories
+ops/logs/
+ops/state/
+
 # Lock files
 *.lock
 data/cache/aimo.lock

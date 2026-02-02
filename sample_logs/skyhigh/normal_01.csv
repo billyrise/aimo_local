@@ -1,0 +1,4 @@
+timestamp,user,url,action,bytes_sent,bytes_received,method
+2024-01-17T10:00:00Z,user001,https://www.google.com/search?q=test,allowed,1024,2048,GET
+2024-01-17T10:01:00Z,user002,https://www.example.com/api/users/12345,allowed,2048,4096,POST
+2024-01-17T10:02:00Z,user001,https://www.openai.com/v1/chat/completions,allowed,4096,8192,POST

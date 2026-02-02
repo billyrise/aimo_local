@@ -1,11 +1,12 @@
 """
-Test Gemini Schema Sanitizer
+Test Gemini Schema Sanitizer (Phase 6: 仕様固定)
 
 Tests that JSON Schema is properly sanitized for Gemini API compatibility.
 Gemini's _responseJsonSchema has specific requirements:
 - Removes $schema, $id (JSON Schema metadata)
 - Keeps only allowlisted fields (type, properties, required, etc.)
 - Recursively cleans nested objects and arrays
+- remove_title_desc=True removes title/description by default
 """
 
 import pytest
@@ -16,32 +17,14 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from llm.client import LLMClient
+from llm.client import clean_schema_for_gemini
 
 
 class TestGeminiSchemaSanitizer:
-    """Test Gemini schema sanitization logic."""
+    """Test Gemini schema sanitization logic (仕様固定)."""
     
     def test_removes_schema_metadata(self):
         """$schema and $id should be removed."""
-        client = LLMClient()
-        
-        # Get the original schema
-        original_schema = client.schema
-        
-        # Verify original has metadata
-        assert "$schema" in original_schema or "$id" in original_schema
-        
-        # Call _call_gemini_api with schema (this triggers sanitization)
-        # We'll extract the sanitization logic by calling the internal method
-        # Since _call_gemini_api is private, we'll test via analyze_batch which uses it
-        # But for unit testing, we should extract the clean_schema_for_gemini function
-        
-        # Extract the cleaning function from the client
-        # We need to access the internal cleaning logic
-        # Since it's nested in _call_gemini_api, we'll test it indirectly
-        
-        # Test: Create a mock schema with metadata
         test_schema = {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "$id": "https://example.local/schemas/test.json",
@@ -50,61 +33,6 @@ class TestGeminiSchemaSanitizer:
                 "test": {"type": "string"}
             }
         }
-        
-        # Simulate the cleaning logic (extracted from client.py)
-        def clean_schema_for_gemini(schema_obj):
-            """Extracted cleaning logic for testing."""
-            if not isinstance(schema_obj, dict):
-                return schema_obj
-            
-            ALLOWED_FIELDS = {
-                "type", "properties", "required", "additionalProperties",
-                "anyOf", "oneOf", "allOf",
-                "items",
-                "minLength", "maxLength", "pattern",
-                "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
-                "enum",
-            }
-            
-            cleaned = {}
-            for key, value in schema_obj.items():
-                if key in ["$schema", "$id"]:
-                    continue
-                
-                if key == "properties":
-                    if isinstance(value, dict):
-                        cleaned_properties = {}
-                        for prop_name, prop_schema in value.items():
-                            if isinstance(prop_schema, dict):
-                                cleaned_properties[prop_name] = clean_schema_for_gemini(prop_schema)
-                            else:
-                                cleaned_properties[prop_name] = prop_schema
-                        cleaned[key] = cleaned_properties
-                    else:
-                        cleaned[key] = value
-                    continue
-                
-                if key not in ALLOWED_FIELDS:
-                    continue
-                
-                if isinstance(value, dict):
-                    cleaned[key] = clean_schema_for_gemini(value)
-                elif isinstance(value, list):
-                    if key in ["required", "enum"]:
-                        cleaned[key] = value
-                    elif key in ["anyOf", "oneOf", "allOf"]:
-                        cleaned[key] = [clean_schema_for_gemini(item) if isinstance(item, dict) else item for item in value]
-                    elif key == "items":
-                        if isinstance(value[0], dict) if value else False:
-                            cleaned[key] = clean_schema_for_gemini(value[0]) if len(value) == 1 else [clean_schema_for_gemini(item) if isinstance(item, dict) else item for item in value]
-                        else:
-                            cleaned[key] = value
-                    else:
-                        cleaned[key] = [clean_schema_for_gemini(item) if isinstance(item, dict) else item for item in value]
-                else:
-                    cleaned[key] = value
-            
-            return cleaned
         
         cleaned = clean_schema_for_gemini(test_schema)
         
@@ -125,69 +53,15 @@ class TestGeminiSchemaSanitizer:
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 100,
-                    "title": "Service Name",  # Should be removed (not in allowlist)
-                    "description": "Service name"  # Should be removed (not in allowlist)
+                    "title": "Service Name",  # Should be removed (not in allowlist by default)
+                    "description": "Service name"  # Should be removed (not in allowlist by default)
                 }
             },
             "required": ["service_name"],
             "additionalProperties": False
         }
         
-        def clean_schema_for_gemini(schema_obj):
-            """Extracted cleaning logic."""
-            if not isinstance(schema_obj, dict):
-                return schema_obj
-            
-            ALLOWED_FIELDS = {
-                "type", "properties", "required", "additionalProperties",
-                "anyOf", "oneOf", "allOf",
-                "items",
-                "minLength", "maxLength", "pattern",
-                "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
-                "enum",
-            }
-            
-            cleaned = {}
-            for key, value in schema_obj.items():
-                if key in ["$schema", "$id"]:
-                    continue
-                
-                if key == "properties":
-                    if isinstance(value, dict):
-                        cleaned_properties = {}
-                        for prop_name, prop_schema in value.items():
-                            if isinstance(prop_schema, dict):
-                                cleaned_properties[prop_name] = clean_schema_for_gemini(prop_schema)
-                            else:
-                                cleaned_properties[prop_name] = prop_schema
-                        cleaned[key] = cleaned_properties
-                    else:
-                        cleaned[key] = value
-                    continue
-                
-                if key not in ALLOWED_FIELDS:
-                    continue
-                
-                if isinstance(value, dict):
-                    cleaned[key] = clean_schema_for_gemini(value)
-                elif isinstance(value, list):
-                    if key in ["required", "enum"]:
-                        cleaned[key] = value
-                    elif key in ["anyOf", "oneOf", "allOf"]:
-                        cleaned[key] = [clean_schema_for_gemini(item) if isinstance(item, dict) else item for item in value]
-                    elif key == "items":
-                        if isinstance(value[0], dict) if value else False:
-                            cleaned[key] = clean_schema_for_gemini(value[0]) if len(value) == 1 else [clean_schema_for_gemini(item) if isinstance(item, dict) else item for item in value]
-                        else:
-                            cleaned[key] = value
-                    else:
-                        cleaned[key] = [clean_schema_for_gemini(item) if isinstance(item, dict) else item for item in value]
-                else:
-                    cleaned[key] = value
-            
-            return cleaned
-        
-        cleaned = clean_schema_for_gemini(test_schema)
+        cleaned = clean_schema_for_gemini(test_schema, remove_title_desc=True)
         
         # Verify allowlisted fields kept
         assert "type" in cleaned
@@ -202,6 +76,52 @@ class TestGeminiSchemaSanitizer:
         assert "maxLength" in service_name_prop
         assert "title" not in service_name_prop
         assert "description" not in service_name_prop
+    
+    def test_remove_title_desc_true(self):
+        """remove_title_desc=True should remove title and description."""
+        test_schema = {
+            "type": "object",
+            "title": "Test Schema",
+            "description": "Test description",
+            "properties": {
+                "field": {
+                    "type": "string",
+                    "title": "Field Title",
+                    "description": "Field description"
+                }
+            }
+        }
+        
+        cleaned = clean_schema_for_gemini(test_schema, remove_title_desc=True)
+        
+        # Verify title/description removed
+        assert "title" not in cleaned
+        assert "description" not in cleaned
+        assert "title" not in cleaned["properties"]["field"]
+        assert "description" not in cleaned["properties"]["field"]
+    
+    def test_remove_title_desc_false(self):
+        """remove_title_desc=False should keep title and description."""
+        test_schema = {
+            "type": "object",
+            "title": "Test Schema",
+            "description": "Test description",
+            "properties": {
+                "field": {
+                    "type": "string",
+                    "title": "Field Title",
+                    "description": "Field description"
+                }
+            }
+        }
+        
+        cleaned = clean_schema_for_gemini(test_schema, remove_title_desc=False)
+        
+        # Verify title/description kept
+        assert "title" in cleaned
+        assert "description" in cleaned
+        assert "title" in cleaned["properties"]["field"]
+        assert "description" in cleaned["properties"]["field"]
     
     def test_recursive_cleaning(self):
         """Nested objects and arrays should be recursively cleaned."""
@@ -231,60 +151,6 @@ class TestGeminiSchemaSanitizer:
             }
         }
         
-        def clean_schema_for_gemini(schema_obj):
-            """Extracted cleaning logic."""
-            if not isinstance(schema_obj, dict):
-                return schema_obj
-            
-            ALLOWED_FIELDS = {
-                "type", "properties", "required", "additionalProperties",
-                "anyOf", "oneOf", "allOf",
-                "items",
-                "minLength", "maxLength", "pattern",
-                "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
-                "enum",
-            }
-            
-            cleaned = {}
-            for key, value in schema_obj.items():
-                if key in ["$schema", "$id"]:
-                    continue
-                
-                if key == "properties":
-                    if isinstance(value, dict):
-                        cleaned_properties = {}
-                        for prop_name, prop_schema in value.items():
-                            if isinstance(prop_schema, dict):
-                                cleaned_properties[prop_name] = clean_schema_for_gemini(prop_schema)
-                            else:
-                                cleaned_properties[prop_name] = prop_schema
-                        cleaned[key] = cleaned_properties
-                    else:
-                        cleaned[key] = value
-                    continue
-                
-                if key not in ALLOWED_FIELDS:
-                    continue
-                
-                if isinstance(value, dict):
-                    cleaned[key] = clean_schema_for_gemini(value)
-                elif isinstance(value, list):
-                    if key in ["required", "enum"]:
-                        cleaned[key] = value
-                    elif key in ["anyOf", "oneOf", "allOf"]:
-                        cleaned[key] = [clean_schema_for_gemini(item) if isinstance(item, dict) else item for item in value]
-                    elif key == "items":
-                        if isinstance(value[0], dict) if value else False:
-                            cleaned[key] = clean_schema_for_gemini(value[0]) if len(value) == 1 else [clean_schema_for_gemini(item) if isinstance(item, dict) else item for item in value]
-                        else:
-                            cleaned[key] = value
-                    else:
-                        cleaned[key] = [clean_schema_for_gemini(item) if isinstance(item, dict) else item for item in value]
-                else:
-                    cleaned[key] = value
-            
-            return cleaned
-        
         cleaned = clean_schema_for_gemini(test_schema)
         
         # Verify nested $schema/$id removed
@@ -301,66 +167,44 @@ class TestGeminiSchemaSanitizer:
         assert "$schema" not in array_items
         assert "type" in array_items
     
+    def test_oneof_anyof_cleaning(self):
+        """oneOf/anyOf should be recursively cleaned."""
+        test_schema = {
+            "type": "object",
+            "oneOf": [
+                {
+                    "type": "object",
+                    "$schema": "should-be-removed",
+                    "properties": {
+                        "field1": {"type": "string"}
+                    }
+                },
+                {
+                    "type": "object",
+                    "$id": "should-be-removed",
+                    "properties": {
+                        "field2": {"type": "number"}
+                    }
+                }
+            ]
+        }
+        
+        cleaned = clean_schema_for_gemini(test_schema)
+        
+        # Verify oneOf exists
+        assert "oneOf" in cleaned
+        assert len(cleaned["oneOf"]) == 2
+        
+        # Verify nested metadata removed
+        assert "$schema" not in cleaned["oneOf"][0]
+        assert "$id" not in cleaned["oneOf"][1]
+    
     def test_snapshot_consistency(self):
         """Schema sanitization should be deterministic (snapshot test)."""
         # Load actual schema
         schema_path = Path(__file__).parent.parent / "llm" / "schemas" / "analysis_output.schema.json"
         with open(schema_path, 'r') as f:
             original_schema = json.load(f)
-        
-        def clean_schema_for_gemini(schema_obj):
-            """Extracted cleaning logic."""
-            if not isinstance(schema_obj, dict):
-                return schema_obj
-            
-            ALLOWED_FIELDS = {
-                "type", "properties", "required", "additionalProperties",
-                "anyOf", "oneOf", "allOf",
-                "items",
-                "minLength", "maxLength", "pattern",
-                "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
-                "enum",
-            }
-            
-            cleaned = {}
-            for key, value in schema_obj.items():
-                if key in ["$schema", "$id"]:
-                    continue
-                
-                if key == "properties":
-                    if isinstance(value, dict):
-                        cleaned_properties = {}
-                        for prop_name, prop_schema in value.items():
-                            if isinstance(prop_schema, dict):
-                                cleaned_properties[prop_name] = clean_schema_for_gemini(prop_schema)
-                            else:
-                                cleaned_properties[prop_name] = prop_schema
-                        cleaned[key] = cleaned_properties
-                    else:
-                        cleaned[key] = value
-                    continue
-                
-                if key not in ALLOWED_FIELDS:
-                    continue
-                
-                if isinstance(value, dict):
-                    cleaned[key] = clean_schema_for_gemini(value)
-                elif isinstance(value, list):
-                    if key in ["required", "enum"]:
-                        cleaned[key] = value
-                    elif key in ["anyOf", "oneOf", "allOf"]:
-                        cleaned[key] = [clean_schema_for_gemini(item) if isinstance(item, dict) else item for item in value]
-                    elif key == "items":
-                        if isinstance(value[0], dict) if value else False:
-                            cleaned[key] = clean_schema_for_gemini(value[0]) if len(value) == 1 else [clean_schema_for_gemini(item) if isinstance(item, dict) else item for item in value]
-                        else:
-                            cleaned[key] = value
-                    else:
-                        cleaned[key] = [clean_schema_for_gemini(item) if isinstance(item, dict) else item for item in value]
-                else:
-                    cleaned[key] = value
-            
-            return cleaned
         
         cleaned = clean_schema_for_gemini(original_schema)
         
@@ -377,3 +221,22 @@ class TestGeminiSchemaSanitizer:
         for prop_name, prop_schema in cleaned["properties"].items():
             assert "$schema" not in prop_schema
             assert "$id" not in prop_schema
+    
+    def test_additional_properties_handling(self):
+        """additionalProperties should be preserved."""
+        test_schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "field": {
+                    "type": "string",
+                    "additionalProperties": True  # Nested (should be preserved if in allowlist)
+                }
+            }
+        }
+        
+        cleaned = clean_schema_for_gemini(test_schema)
+        
+        # Verify additionalProperties preserved
+        assert "additionalProperties" in cleaned
+        assert cleaned["additionalProperties"] is False
