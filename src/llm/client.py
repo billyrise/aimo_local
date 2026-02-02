@@ -880,8 +880,8 @@ class LLMClient:
                             {"role": "system", "content": self.system_prompt},
                             {"role": "user", "content": self.json_retry_prompt.format(
                                 error_message=str(e),
-                                json_schema=json_schema_text,
-                                original_samples=samples_text
+                                json_schema=str(self.schema) if self.schema else "{}",
+                                original_samples=user_prompt
                             )}
                         ]
                         time.sleep(self._calculate_delay(attempt))

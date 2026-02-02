@@ -19,8 +19,6 @@ Taxonomy Dimensions (AIMO Standard v0.1.7):
 - OB: Outcome/Benefit (0+, optional)
 """
 
-from typing import Optional
-
 # Default AIMO Standard version
 DEFAULT_AIMO_STANDARD_VERSION = "0.1.7"
 
