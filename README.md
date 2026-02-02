@@ -64,6 +64,14 @@ tail -f ops/logs/launchd.out.log
 
 See `ops/runbook.md` for detailed operations procedures.
 
+## AIMO Standard Integration
+
+The AIMO Standard specification is referenced as a git submodule at `third_party/aimo-standard`. The Engine pins to a specific Standard version (currently v0.1.7) and records the version, commit hash, and SHA256 checksum in each run manifest to ensure audit reproducibility. To sync the Standard artifacts locally, run:
+
+```bash
+python scripts/sync_aimo_standard.py --version 0.1.7
+```
+
 ## Notes
 
 - Update `config/url_normalization.yml` and `config/bytes_buckets.yml` only with a corresponding `signature_version` bump.
