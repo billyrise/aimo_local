@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import yaml
 import idna
+import tldextract
 
 
 class URLNormalizer:
@@ -53,6 +54,20 @@ class URLNormalizer:
         self.drop_keys_exact = set(self.config.get("query", {}).get("drop_keys_exact", []))
         self.drop_keys_prefix = self.config.get("query", {}).get("drop_keys_prefix", [])
         self.keep_keys_whitelist = set(self.config.get("query", {}).get("keep_keys_whitelist", []))
+        
+        # Initialize domain extractor (Public Suffix List)
+        psl_path = Path(__file__).parent.parent.parent / "data" / "psl" / "public_suffix_list.dat"
+        if psl_path.exists():
+            # Use local file with file:// protocol
+            suffix_list_urls = [f"file://{psl_path.absolute()}"]
+        else:
+            # Use default URLs if local file doesn't exist
+            suffix_list_urls = None
+        
+        self.domain_extractor = tldextract.TLDExtract(
+            suffix_list_urls=suffix_list_urls,
+            fallback_to_snapshot=True  # Fallback to snapshot if download fails
+        )
     
     def normalize(self, url: str, pii_audit_callback: Optional[callable] = None) -> Dict[str, str]:
         """
@@ -232,23 +247,29 @@ class URLNormalizer:
     
     def extract_domain(self, host: str) -> str:
         """
-        Extract eTLD+1 domain from hostname.
+        Extract eTLD+1 domain from hostname using Public Suffix List.
         
-        Note: This is a simplified version. Full implementation should use
-        Public Suffix List (tldextract library).
+        Uses tldextract library to accurately extract eTLD+1, handling
+        complex cases like .co.jp, .com.au, etc.
         
         Args:
             host: Normalized hostname
         
         Returns:
-            eTLD+1 domain (e.g., "example.com" from "www.example.com")
+            eTLD+1 domain (e.g., "example.com" from "www.example.com",
+            "example.co.jp" from "www.example.co.jp")
         """
-        # For now, use simple heuristic (remove leading subdomain)
-        # Full implementation should use tldextract with Public Suffix List
-        parts = host.split('.')
-        if len(parts) >= 2:
-            return '.'.join(parts[-2:])
-        return host
+        if not host:
+            return host
+        
+        try:
+            extracted = self.domain_extractor(host)
+            if extracted.domain and extracted.suffix:
+                return f"{extracted.domain}.{extracted.suffix}"
+            return host
+        except Exception:
+            # Fallback to original host if extraction fails
+            return host
 
 
 # Example usage:

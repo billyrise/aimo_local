@@ -1,0 +1,4 @@
+start,srcuser,src,url,bytes_sent,action,http_method
+2024-01-17T10:00:00Z,user001,192.168.1.100,INVALID_URL_FORMAT,1024,allow,GET
+2024-01-17T10:01:00Z,,192.168.1.101,https://www.example.com/api/users/12345,2048,allow,POST
+2024-01-17T10:02:00Z,user001,192.168.1.100,https://www.openai.com/v1/chat/completions,NOT_A_NUMBER,allow,POST

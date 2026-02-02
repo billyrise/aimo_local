@@ -34,6 +34,108 @@ except ImportError:
     GEMINI_AVAILABLE = False
 
 
+def clean_schema_for_gemini(schema_obj: Dict[str, Any], remove_title_desc: bool = True) -> Dict[str, Any]:
+    """
+    Recursively clean JSON Schema to Gemini _responseJsonSchema compatible format.
+    
+    Uses allowlist approach: only keeps fields explicitly supported by Gemini API.
+    This is more audit-friendly and prevents future unknown-field errors.
+    
+    Supported fields per Gemini API documentation:
+    - type, properties, required, additionalProperties
+    - anyOf, oneOf, items, enum
+    - string: minLength, maxLength
+    - number: minimum, maximum
+    - array: items
+    - object: properties, additionalProperties
+    
+    NOT supported:
+    - $schema, $id (JSON Schema metadata)
+    - title, description (optional, removed by default for safety)
+    
+    Args:
+        schema_obj: JSON Schema object to clean
+        remove_title_desc: If True, remove title and description fields (default: True)
+    
+    Returns:
+        Cleaned schema object compatible with Gemini _responseJsonSchema
+    """
+    if not isinstance(schema_obj, dict):
+        return schema_obj
+    
+    # Allowlist of supported fields for Gemini _responseJsonSchema
+    ALLOWED_FIELDS = {
+        # Core schema fields
+        "type", "properties", "required", "additionalProperties",
+        # Union types
+        "anyOf", "oneOf", "allOf",
+        # Array/object structure
+        "items",
+        # String constraints
+        "minLength", "maxLength", "pattern",
+        # Number constraints
+        "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
+        # Enum
+        "enum",
+    }
+    
+    # Add title/description to allowed fields if not removing them
+    if not remove_title_desc:
+        ALLOWED_FIELDS.add("title")
+        ALLOWED_FIELDS.add("description")
+    
+    cleaned = {}
+    for key, value in schema_obj.items():
+        # Skip unsupported metadata fields ($schema, $id)
+        if key in ["$schema", "$id"]:
+            continue
+        
+        # Special handling for 'properties': recursively clean each property definition
+        # Properties themselves are not in ALLOWED_FIELDS, but their contents need cleaning
+        if key == "properties":
+            if isinstance(value, dict):
+                cleaned_properties = {}
+                for prop_name, prop_schema in value.items():
+                    if isinstance(prop_schema, dict):
+                        cleaned_properties[prop_name] = clean_schema_for_gemini(prop_schema, remove_title_desc)
+                    else:
+                        cleaned_properties[prop_name] = prop_schema
+                cleaned[key] = cleaned_properties
+            else:
+                cleaned[key] = value
+            continue
+        
+        # Only keep allowlisted fields
+        if key not in ALLOWED_FIELDS:
+            continue
+        
+        # Recursively clean nested objects
+        if isinstance(value, dict):
+            cleaned[key] = clean_schema_for_gemini(value, remove_title_desc)
+        elif isinstance(value, list):
+            # Handle arrays (e.g., required, anyOf, oneOf, allOf, items)
+            if key in ["required", "enum"]:
+                # Keep as-is for required/enum arrays
+                cleaned[key] = value
+            elif key in ["anyOf", "oneOf", "allOf"]:
+                # Recursively clean each option in union
+                cleaned[key] = [clean_schema_for_gemini(item, remove_title_desc) if isinstance(item, dict) else item for item in value]
+            elif key == "items":
+                # items can be a dict (schema) or array of schemas
+                if isinstance(value[0], dict) if value else False:
+                    cleaned[key] = clean_schema_for_gemini(value[0], remove_title_desc) if len(value) == 1 else [clean_schema_for_gemini(item, remove_title_desc) if isinstance(item, dict) else item for item in value]
+                else:
+                    cleaned[key] = value
+            else:
+                # Other arrays (shouldn't occur in standard JSON Schema, but handle gracefully)
+                cleaned[key] = [clean_schema_for_gemini(item, remove_title_desc) if isinstance(item, dict) else item for item in value]
+        else:
+            # Primitive values (strings, numbers, booleans)
+            cleaned[key] = value
+    
+    return cleaned
+
+
 class LLMClient:
     """
     LLM client for service classification.
@@ -348,97 +450,7 @@ class LLMClient:
         if response_json_schema:
             # Clean schema using allowlist approach (more audit-friendly)
             # Only keep fields explicitly supported by Gemini's _responseJsonSchema
-            def clean_schema_for_gemini(schema_obj):
-                """Recursively clean JSON Schema to Gemini _responseJsonSchema compatible format.
-                
-                Uses allowlist approach: only keeps fields explicitly supported by Gemini API.
-                This is more audit-friendly and prevents future unknown-field errors.
-                
-                Supported fields per Gemini API documentation:
-                - type, properties, required, additionalProperties
-                - anyOf, oneOf, items, enum
-                - string: minLength, maxLength
-                - number: minimum, maximum
-                - array: items
-                - object: properties, additionalProperties
-                
-                NOT supported:
-                - $schema, $id (JSON Schema metadata)
-                - title, description (optional, but not in allowlist for safety)
-                """
-                if not isinstance(schema_obj, dict):
-                    return schema_obj
-                
-                # Allowlist of supported fields for Gemini _responseJsonSchema
-                ALLOWED_FIELDS = {
-                    # Core schema fields
-                    "type", "properties", "required", "additionalProperties",
-                    # Union types
-                    "anyOf", "oneOf", "allOf",
-                    # Array/object structure
-                    "items",
-                    # String constraints
-                    "minLength", "maxLength", "pattern",
-                    # Number constraints
-                    "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum",
-                    # Enum
-                    "enum",
-                    # Optional: title/description (Gemini may accept but not in official allowlist)
-                    # Uncomment if needed: "title", "description"
-                }
-                
-                cleaned = {}
-                for key, value in schema_obj.items():
-                    # Skip unsupported metadata fields ($schema, $id)
-                    if key in ["$schema", "$id"]:
-                        continue
-                    
-                    # Special handling for 'properties': recursively clean each property definition
-                    # Properties themselves are not in ALLOWED_FIELDS, but their contents need cleaning
-                    if key == "properties":
-                        if isinstance(value, dict):
-                            cleaned_properties = {}
-                            for prop_name, prop_schema in value.items():
-                                if isinstance(prop_schema, dict):
-                                    cleaned_properties[prop_name] = clean_schema_for_gemini(prop_schema)
-                                else:
-                                    cleaned_properties[prop_name] = prop_schema
-                            cleaned[key] = cleaned_properties
-                        else:
-                            cleaned[key] = value
-                        continue
-                    
-                    # Only keep allowlisted fields
-                    if key not in ALLOWED_FIELDS:
-                        continue
-                    
-                    # Recursively clean nested objects
-                    if isinstance(value, dict):
-                        cleaned[key] = clean_schema_for_gemini(value)
-                    elif isinstance(value, list):
-                        # Handle arrays (e.g., required, anyOf, oneOf, allOf, items)
-                        if key in ["required", "enum"]:
-                            # Keep as-is for required/enum arrays
-                            cleaned[key] = value
-                        elif key in ["anyOf", "oneOf", "allOf"]:
-                            # Recursively clean each option in union
-                            cleaned[key] = [clean_schema_for_gemini(item) if isinstance(item, dict) else item for item in value]
-                        elif key == "items":
-                            # items can be a dict (schema) or array of schemas
-                            if isinstance(value[0], dict) if value else False:
-                                cleaned[key] = clean_schema_for_gemini(value[0]) if len(value) == 1 else [clean_schema_for_gemini(item) if isinstance(item, dict) else item for item in value]
-                            else:
-                                cleaned[key] = value
-                        else:
-                            # Other arrays (shouldn't occur in standard JSON Schema, but handle gracefully)
-                            cleaned[key] = [clean_schema_for_gemini(item) if isinstance(item, dict) else item for item in value]
-                    else:
-                        # Primitive values (strings, numbers, booleans)
-                        cleaned[key] = value
-                
-                return cleaned
-            
-            schema_copy = clean_schema_for_gemini(response_json_schema)
+            schema_copy = clean_schema_for_gemini(response_json_schema, remove_title_desc=True)
             
             payload["generationConfig"]["responseMimeType"] = "application/json"
             payload["generationConfig"]["_responseJsonSchema"] = schema_copy  # Use _responseJsonSchema, not responseSchema

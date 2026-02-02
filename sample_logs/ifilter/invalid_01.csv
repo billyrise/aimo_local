@@ -1,0 +1,3 @@
+date,time,user,url,action
+2024-01-17,10:00:00,user001,,ALLOW
+INVALID,10:01:00,user002,https://www.example.com,BLOCK

@@ -18,6 +18,11 @@ pip install -r requirements.txt
 # Copy env.example to .env.local and fill in your values:
 # cp env.example .env.local
 # Edit .env.local with your API keys and settings
+#
+# IMPORTANT: LLM API Keys
+# - GEMINI_API_KEY (REQUIRED): Default LLM provider is Gemini
+#   Get your API key from: https://makersuite.google.com/app/apikey
+# - OPENAI_API_KEY (OPTIONAL): Only needed if you want to use OpenAI instead
 
 # Run E2E smoke test
 python3 src/main.py sample_logs/paloalto_sample.csv --vendor paloalto
@@ -35,6 +40,29 @@ This bundle contains:
 - **B. Data specs and normalization** (`schemas/*`, `config/*`, `data/psl/*`, `docs/domain_parsing.md`)
 
 PSL source: `https://publicsuffix.org/list/public_suffix_list.dat`
+
+## Scheduled Execution (launchd)
+
+For automated periodic execution on macOS, use launchd:
+
+```bash
+# 1. Make wrapper script executable
+chmod +x ops/bin/run_aimo.sh
+
+# 2. Update plist with absolute paths
+# Edit ops/launchd/aimo.engine.plist and replace /ABSOLUTE/PATH/TO/REPO
+
+# 3. Install and start
+cp ops/launchd/aimo.engine.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/aimo.engine.plist
+launchctl start com.aimo.analysis.engine
+
+# 4. Check status
+launchctl list | grep aimo
+tail -f ops/logs/launchd.out.log
+```
+
+See `ops/runbook.md` for detailed operations procedures.
 
 ## Notes
 

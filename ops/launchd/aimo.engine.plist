@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>com.aimo.analysis.engine</string>
+
+    <key>ProgramArguments</key>
+    <array>
+      <string>/bin/bash</string>
+      <string>/ABSOLUTE/PATH/TO/REPO/ops/bin/run_aimo.sh</string>
+      <string>/ABSOLUTE/PATH/TO/REPO/sample_logs/paloalto_sample.csv</string>
+      <string>paloalto</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StartInterval</key>
+    <integer>300</integer>
+
+    <key>StandardOutPath</key>
+    <string>/ABSOLUTE/PATH/TO/REPO/ops/logs/launchd.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/ABSOLUTE/PATH/TO/REPO/ops/logs/launchd.err.log</string>
+
+    <key>WorkingDirectory</key>
+    <string>/ABSOLUTE/PATH/TO/REPO</string>
+
+    <!-- 
+    環境変数の扱い:
+    - デフォルト: src/main.py が自動的に .env.local を読み込む（推奨）
+    - .env.local に GEMINI_API_KEY を設定すれば、plist での設定は不要
+    - plist で環境変数を設定する場合は以下をアンコメント（セキュリティ注意）
+    - キーは絶対にログへ出さないこと
+    -->
+    <!--
+    <key>EnvironmentVariables</key>
+    <dict>
+      <key>GEMINI_API_KEY</key>
+      <string>__SET_IN_KEYCHAIN_OR_SECURE_METHOD__</string>
+    </dict>
+    -->
+  </dict>
+</plist>

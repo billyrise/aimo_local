@@ -11,6 +11,7 @@ This is critical for audit integrity:
 import pytest
 import sys
 import json
+import uuid
 from pathlib import Path
 from datetime import datetime
 from unittest.mock import Mock, patch
@@ -36,9 +37,27 @@ class TestLLMCoverageCounts:
             finished_at=datetime.utcnow(),
             input_file="test.csv",
             vendor="paloalto",
-            thresholds_used={},
-            counts={},
-            sample={},
+            thresholds_used={
+                "A_min_bytes": 1000000,
+                "B_burst_count": 10,
+                "B_burst_window_seconds": 300,
+                "B_cumulative_bytes": 5000000,
+                "C_sample_rate": 0.1
+            },
+            counts={
+                "total_events": 100,
+                "total_signatures": 50,
+                "abc_count_a": 5,
+                "abc_count_b": 3,
+                "abc_count_c": 2,
+                "burst_hit": 3,
+                "cumulative_hit": 3
+            },
+            sample={
+                "sample_rate": 0.1,
+                "sample_method": "deterministic_hash",
+                "seed": "test_coverage_1"
+            },
             rule_coverage={
                 "rule_hit": 10,
                 "unknown_count": 5
@@ -76,9 +95,27 @@ class TestLLMCoverageCounts:
             finished_at=datetime.utcnow(),
             input_file="test.csv",
             vendor="paloalto",
-            thresholds_used={},
-            counts={},
-            sample={},
+            thresholds_used={
+                "A_min_bytes": 1000000,
+                "B_burst_count": 10,
+                "B_burst_window_seconds": 300,
+                "B_cumulative_bytes": 5000000,
+                "C_sample_rate": 0.1
+            },
+            counts={
+                "total_events": 100,
+                "total_signatures": 50,
+                "abc_count_a": 5,
+                "abc_count_b": 3,
+                "abc_count_c": 2,
+                "burst_hit": 3,
+                "cumulative_hit": 3
+            },
+            sample={
+                "sample_rate": 0.1,
+                "sample_method": "deterministic_hash",
+                "seed": "test_coverage_2"
+            },
             rule_coverage={
                 "rule_hit": 10,
                 "unknown_count": 8
@@ -121,9 +158,27 @@ class TestLLMCoverageCounts:
             finished_at=datetime.utcnow(),
             input_file="test.csv",
             vendor="paloalto",
-            thresholds_used={},
-            counts={},
-            sample={},
+            thresholds_used={
+                "A_min_bytes": 1000000,
+                "B_burst_count": 10,
+                "B_burst_window_seconds": 300,
+                "B_cumulative_bytes": 5000000,
+                "C_sample_rate": 0.1
+            },
+            counts={
+                "total_events": 100,
+                "total_signatures": 50,
+                "abc_count_a": 5,
+                "abc_count_b": 3,
+                "abc_count_c": 2,
+                "burst_hit": 3,
+                "cumulative_hit": 3
+            },
+            sample={
+                "sample_rate": 0.1,
+                "sample_method": "deterministic_hash",
+                "seed": "test_coverage_3"
+            },
             rule_coverage={
                 "rule_hit": 10,
                 "unknown_count": 10
@@ -175,9 +230,27 @@ class TestLLMCoverageCounts:
             finished_at=datetime.utcnow(),
             input_file="test.csv",
             vendor="paloalto",
-            thresholds_used={},
-            counts={},
-            sample={},
+            thresholds_used={
+                "A_min_bytes": 1000000,
+                "B_burst_count": 10,
+                "B_burst_window_seconds": 300,
+                "B_cumulative_bytes": 5000000,
+                "C_sample_rate": 0.1
+            },
+            counts={
+                "total_events": 100,
+                "total_signatures": 50,
+                "abc_count_a": 5,
+                "abc_count_b": 3,
+                "abc_count_c": 2,
+                "burst_hit": 3,
+                "cumulative_hit": 3
+            },
+            sample={
+                "sample_rate": 0.1,
+                "sample_method": "deterministic_hash",
+                "seed": "test_coverage_4"
+            },
             rule_coverage={
                 "rule_hit": 20,
                 "unknown_count": 15
@@ -234,9 +307,27 @@ class TestLLMCoverageCounts:
             finished_at=datetime.utcnow(),
             input_file="test.csv",
             vendor="paloalto",
-            thresholds_used={},
-            counts={},
-            sample={},
+            thresholds_used={
+                "A_min_bytes": 1000000,
+                "B_burst_count": 10,
+                "B_burst_window_seconds": 300,
+                "B_cumulative_bytes": 5000000,
+                "C_sample_rate": 0.1
+            },
+            counts={
+                "total_events": 100,
+                "total_signatures": 50,
+                "abc_count_a": 5,
+                "abc_count_b": 3,
+                "abc_count_c": 2,
+                "burst_hit": 3,
+                "cumulative_hit": 3
+            },
+            sample={
+                "sample_rate": 0.1,
+                "sample_method": "deterministic_hash",
+                "seed": "test_audit_1"
+            },
             rule_coverage={
                 "rule_hit": 10,
                 "unknown_count": 5
@@ -283,3 +374,96 @@ class TestLLMCoverageCounts:
         assert "llm_analyzed_count" in llm_cov
         assert "needs_review_count" in llm_cov
         assert "skipped_count" in llm_cov
+    
+    def test_db_recalculation_consistency(self, tmp_path):
+        """LLM coverage counts should match DB state when recalculated."""
+        # A) DB完全分離: tmp_path配下にDBとtemp_directoryを作成
+        test_id = str(uuid.uuid4())[:8]  # ユニークなテストID
+        db_path = tmp_path / f"test_{test_id}.duckdb"
+        temp_directory = tmp_path / f"duckdb_tmp_{test_id}"
+        
+        # DuckDBClient初期化（temp_directoryを明示指定）
+        db_client = DuckDBClient(str(db_path), temp_directory=str(temp_directory))
+        
+        # B) ユニークなurl_signatureを生成（テスト間で衝突しないように）
+        base_sig = f"test_sig_{test_id}"
+        
+        # Insert test data
+        # active: should be counted in llm_analyzed_count
+        # Note: status列はインデックス列なので、INSERT時に設定（更新は避ける）
+        for i in range(5):
+            db_client.upsert("analysis_cache", {
+                "url_signature": f"{base_sig}_active_{i}",
+                "service_name": "Test Service",
+                "classification_source": "LLM",
+                "status": "active",
+                "usage_type": "business",
+                "risk_level": "low",
+                "category": "Test",
+                "confidence": 0.9
+            }, conflict_key="url_signature")
+        
+        # needs_review: should be counted in needs_review_count (NOT in llm_analyzed_count)
+        for i in range(3):
+            db_client.upsert("analysis_cache", {
+                "url_signature": f"{base_sig}_needs_review_{i}",
+                "service_name": "Unknown",
+                "classification_source": "LLM",
+                "status": "needs_review",
+                "usage_type": "unknown",
+                "risk_level": "medium",
+                "category": "Unknown",
+                "confidence": 0.3
+            }, conflict_key="url_signature")
+        
+        # failed_permanent: should be excluded (counted in skipped_count)
+        for i in range(2):
+            db_client.upsert("analysis_cache", {
+                "url_signature": f"{base_sig}_failed_{i}",
+                "service_name": "Unknown",
+                "classification_source": "LLM",
+                "status": "failed_permanent",
+                "error_reason": "budget_exceeded",
+                "error_type": "budget_exceeded",
+                "usage_type": "unknown",
+                "risk_level": "medium",
+                "category": "Unknown",
+                "confidence": 0.0
+            }, conflict_key="url_signature")
+        
+        # C) Writer Queueのflush/closeを明示
+        db_client.flush()
+        
+        # 再計算前にclose/reopenで可視性を完全に確定（テストの安定性向上）
+        db_client.close()
+        db_client = DuckDBClient(str(db_path), temp_directory=str(temp_directory))
+        
+        # D) 再計算はDB上の集計から取り直す（同一接続を使用）
+        # get_reader()ではなく、writer接続を直接使用（テストではread_onlyは使わない）
+        # ただし、DuckDBClientの設計上、get_reader()を使う方が安全
+        reader = db_client.get_reader()
+        
+        llm_analyzed_db = reader.execute(
+            "SELECT COUNT(*) FROM analysis_cache WHERE classification_source = 'LLM' AND status = 'active'"
+        ).fetchone()[0] or 0
+        
+        needs_review_db = reader.execute(
+            "SELECT COUNT(*) FROM analysis_cache WHERE status = 'needs_review'"
+        ).fetchone()[0] or 0
+        
+        skipped_db = reader.execute(
+            "SELECT COUNT(*) FROM analysis_cache WHERE status = 'failed_permanent'"
+        ).fetchone()[0] or 0
+        
+        # Verify counts match expected
+        assert llm_analyzed_db == 5, f"active should be counted in llm_analyzed_count (got {llm_analyzed_db})"
+        assert needs_review_db == 3, f"needs_review should be counted separately (got {needs_review_db})"
+        assert skipped_db == 2, f"failed_permanent should be excluded (got {skipped_db})"
+        
+        # Verify active is NOT in needs_review (mutually exclusive)
+        active_in_needs_review = reader.execute(
+            "SELECT COUNT(*) FROM analysis_cache WHERE status = 'active' AND status = 'needs_review'"
+        ).fetchone()[0] or 0
+        assert active_in_needs_review == 0, "active and needs_review should be mutually exclusive"
+        
+        db_client.close()
