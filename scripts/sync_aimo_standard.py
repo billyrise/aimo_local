@@ -26,6 +26,18 @@ AIMO_STANDARD_VERSION_DEFAULT = "0.1.7"
 AIMO_STANDARD_SUBMODULE_PATH = "third_party/aimo-standard"
 AIMO_STANDARD_CACHE_DIR_DEFAULT = "~/.cache/aimo/standard"
 
+# Global flag to control log output destination
+# When True, all logging goes to stderr to keep stdout clean for JSON
+_LOG_TO_STDERR = False
+
+
+def _log(msg: str):
+    """Log message to appropriate output stream."""
+    if _LOG_TO_STDERR:
+        print(msg, file=sys.stderr)
+    else:
+        print(msg)
+
 
 def get_project_root() -> Path:
     """Get the project root directory (where .git is located)."""
@@ -54,7 +66,7 @@ def ensure_submodule_initialized(project_root: Path, submodule_path: str) -> boo
     full_path = project_root / submodule_path
     
     if not full_path.exists():
-        print(f"Initializing submodule at {submodule_path}...")
+        _log(f"Initializing submodule at {submodule_path}...")
         returncode, stdout, stderr = run_git_command(
             ["submodule", "update", "--init", submodule_path],
             cwd=project_root
@@ -62,7 +74,7 @@ def ensure_submodule_initialized(project_root: Path, submodule_path: str) -> boo
         if returncode != 0:
             print(f"ERROR: Failed to initialize submodule: {stderr}", file=sys.stderr)
             return False
-        print(f"Submodule initialized successfully.")
+        _log("Submodule initialized successfully.")
     
     # Check if .git exists in submodule
     git_dir = full_path / ".git"
@@ -85,20 +97,20 @@ def checkout_version(submodule_path: Path, version: str) -> tuple[bool, str]:
         (success, commit_hash)
     """
     # Fetch all tags
-    print(f"Fetching tags from remote...")
+    _log("Fetching tags from remote...")
     returncode, _, stderr = run_git_command(["fetch", "--all", "--tags"], cwd=submodule_path)
     if returncode != 0:
         print(f"WARNING: Failed to fetch tags: {stderr}", file=sys.stderr)
     
     # Try to checkout as tag first (with v prefix)
     tag_name = f"v{version}" if not version.startswith("v") else version
-    print(f"Attempting to checkout tag: {tag_name}")
+    _log(f"Attempting to checkout tag: {tag_name}")
     
     returncode, stdout, stderr = run_git_command(["checkout", tag_name], cwd=submodule_path)
     
     if returncode != 0:
         # Try without v prefix
-        print(f"Tag {tag_name} not found, trying {version}...")
+        _log(f"Tag {tag_name} not found, trying {version}...")
         returncode, stdout, stderr = run_git_command(["checkout", version], cwd=submodule_path)
         
         if returncode != 0:
@@ -112,7 +124,7 @@ def checkout_version(submodule_path: Path, version: str) -> tuple[bool, str]:
         print(f"ERROR: Failed to get commit hash: {stderr}", file=sys.stderr)
         return False, ""
     
-    print(f"Checked out version {version} at commit: {commit_hash[:12]}")
+    _log(f"Checked out version {version} at commit: {commit_hash[:12]}")
     return True, commit_hash
 
 
@@ -209,7 +221,7 @@ def sync_artifacts_to_cache(
     
     # Clear existing cache for this version
     if version_cache_dir.exists():
-        print(f"Clearing existing cache at {version_cache_dir}")
+        _log(f"Clearing existing cache at {version_cache_dir}")
         shutil.rmtree(version_cache_dir)
     
     version_cache_dir.mkdir(parents=True, exist_ok=True)
@@ -224,14 +236,14 @@ def sync_artifacts_to_cache(
     if artifact_type == "zip":
         # Extract zip to cache
         import zipfile
-        print(f"Extracting {source_path} to {version_cache_dir}")
+        _log(f"Extracting {source_path} to {version_cache_dir}")
         with zipfile.ZipFile(source_path, 'r') as zip_ref:
             zip_ref.extractall(version_cache_dir)
         manifest["zip_sha256"] = calculate_file_sha256(source_path)
     
     elif artifact_type in ("dir", "source_pack", "schemas"):
         # Copy directory to cache
-        print(f"Copying {artifact_type} from {source_path} to {version_cache_dir}")
+        _log(f"Copying {artifact_type} from {source_path} to {version_cache_dir}")
         dest_dir = version_cache_dir / artifact_type
         shutil.copytree(source_path, dest_dir)
         manifest["source_dir"] = str(source_path.relative_to(submodule_path))
@@ -241,7 +253,7 @@ def sync_artifacts_to_cache(
         for dir_name in ["schemas", "data", "artifacts", "source_pack", "templates", "examples"]:
             src_dir = submodule_path / dir_name
             if src_dir.exists():
-                print(f"Copying {dir_name}/ to cache")
+                _log(f"Copying {dir_name}/ to cache")
                 dest_dir = version_cache_dir / dir_name
                 shutil.copytree(src_dir, dest_dir)
     
@@ -278,24 +290,20 @@ def sync_aimo_standard(
     Returns:
         Manifest dict with version info and SHA256 checksums
     """
+    global _LOG_TO_STDERR
+    _LOG_TO_STDERR = quiet
+    
     project_root = get_project_root()
     full_submodule_path = project_root / submodule_path
     cache_path = Path(os.path.expanduser(cache_dir))
     
-    # Helper for conditional output (stderr if quiet, stdout otherwise)
-    def log(msg: str):
-        if not quiet:
-            print(msg)
-        else:
-            print(msg, file=sys.stderr)
-    
-    log(f"=" * 60)
-    log(f"AIMO Standard Sync")
-    log(f"=" * 60)
-    log(f"Version: {version}")
-    log(f"Submodule: {submodule_path}")
-    log(f"Cache: {cache_dir}")
-    log(f"=" * 60)
+    _log("=" * 60)
+    _log("AIMO Standard Sync")
+    _log("=" * 60)
+    _log(f"Version: {version}")
+    _log(f"Submodule: {submodule_path}")
+    _log(f"Cache: {cache_dir}")
+    _log("=" * 60)
     
     # Step 1: Ensure submodule is initialized
     if not ensure_submodule_initialized(project_root, submodule_path):
@@ -320,16 +328,16 @@ def sync_aimo_standard(
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2, ensure_ascii=False)
     
-    log(f"=" * 60)
-    log(f"Sync completed successfully!")
-    log(f"=" * 60)
-    log(f"Version:       {manifest['version']}")
-    log(f"Commit:        {manifest['commit'][:12]}")
-    log(f"Tag:           {manifest['tag']}")
-    log(f"Cache Dir:     {manifest['cache_dir']}")
-    log(f"File Count:    {manifest['file_count']}")
-    log(f"Directory SHA256: {manifest['directory_sha256'][:16]}...")
-    log(f"=" * 60)
+    _log("=" * 60)
+    _log("Sync completed successfully!")
+    _log("=" * 60)
+    _log(f"Version:       {manifest['version']}")
+    _log(f"Commit:        {manifest['commit'][:12]}")
+    _log(f"Tag:           {manifest['tag']}")
+    _log(f"Cache Dir:     {manifest['cache_dir']}")
+    _log(f"File Count:    {manifest['file_count']}")
+    _log(f"Directory SHA256: {manifest['directory_sha256'][:16]}...")
+    _log("=" * 60)
     
     return manifest
 
