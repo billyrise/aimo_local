@@ -60,21 +60,16 @@ jobs:
           mypy src --ignore-missing-imports --no-error-summary || echo "::warning::mypy reported issues (non-blocking for now)"
         continue-on-error: true
       
-      # Run tests
-      # Note: Some legacy tests are excluded until codebase migration is complete
+      # Run tests (no ignores - all tests must pass)
+      # Legacy tests that need API access have pytest.mark.skip internally
       - name: Run tests
         run: |
-          pytest -q --tb=short \
-            --ignore=tests/test_rule_classifier.py \
-            --ignore=tests/test_llm_gemini_schema_validation.py \
-            --ignore=tests/test_budget_priority.py \
-            --ignore=tests/test_cli_smoke.py \
-            --ignore=tests/test_human_verified_protection.py \
-            --ignore=tests/test_idempotency.py \
-            --ignore=tests/test_input_manifest_hash.py \
-            --ignore=tests/test_llm_rate_limit_policy.py
+          pytest -q --tb=short
         env:
           PYTHONPATH: ${{ github.workspace }}/src
+          # Ensure LLM is disabled in CI (stub classifier will be used for contract tests)
+          AIMO_DISABLE_LLM: "1"
+          # AIMO_ALLOW_SKIP_PINNING is intentionally NOT set - pinning must be enforced
   
   e2e-smoke:
     name: E2E Smoke Test

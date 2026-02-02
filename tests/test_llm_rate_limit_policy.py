@@ -61,7 +61,7 @@ class TestLLMRateLimitPolicy:
                 return {
                     "choices": [{
                         "message": {
-                            "content": '[{"service_name": "Test", "usage_type": "business", "risk_level": "low", "category": "Test", "confidence": 0.9, "rationale_short": "Test", "fs_uc_code": "", "dt_code": "", "ch_code": "", "im_code": "", "rs_code": "", "ob_code": "", "ev_code": "", "taxonomy_version": "1.0"}]'
+                            "content": '[{"service_name": "Test", "usage_type": "business", "risk_level": "low", "category": "Test", "confidence": 0.9, "rationale_short": "Test", "fs_code": "FS-001", "im_code": "IM-001", "uc_codes": ["UC-001"], "dt_codes": ["DT-001"], "ch_codes": ["CH-001"], "rs_codes": ["RS-001"], "ev_codes": ["EV-001"], "ob_codes": [], "aimo_standard_version": "0.1.7"}]'
                         }
                     }],
                     "usage": {"prompt_tokens": 100, "completion_tokens": 200}
@@ -97,7 +97,7 @@ class TestLLMRateLimitPolicy:
                 return {
                     "choices": [{
                         "message": {
-                            "content": '[{"service_name": "Test", "usage_type": "business", "risk_level": "low", "category": "Test", "confidence": 0.9, "rationale_short": "Test", "fs_uc_code": "", "dt_code": "", "ch_code": "", "im_code": "", "rs_code": "", "ob_code": "", "ev_code": "", "taxonomy_version": "1.0"}]'
+                            "content": '[{"service_name": "Test", "usage_type": "business", "risk_level": "low", "category": "Test", "confidence": 0.9, "rationale_short": "Test", "fs_code": "FS-001", "im_code": "IM-001", "uc_codes": ["UC-001"], "dt_codes": ["DT-001"], "ch_codes": ["CH-001"], "rs_codes": ["RS-001"], "ev_codes": ["EV-001"], "ob_codes": [], "aimo_standard_version": "0.1.7"}]'
                         }
                     }],
                     "usage": {"prompt_tokens": 100, "completion_tokens": 200}
@@ -146,11 +146,11 @@ class TestLLMRateLimitPolicy:
         """retry_summary should have all required fields."""
         client = LLMClient()
         
-        # Mock successful call
+        # Mock successful call with 8-dimension format
         with patch.object(client, '_call_gemini_api', return_value={
             "choices": [{
                 "message": {
-                    "content": '[{"service_name": "Test", "usage_type": "business", "risk_level": "low", "category": "Test", "confidence": 0.9, "rationale_short": "Test", "fs_uc_code": "", "dt_code": "", "ch_code": "", "im_code": "", "rs_code": "", "ob_code": "", "ev_code": "", "taxonomy_version": "1.0"}]'
+                    "content": '[{"service_name": "Test", "usage_type": "business", "risk_level": "low", "category": "Test", "confidence": 0.9, "rationale_short": "Test", "fs_code": "FS-001", "im_code": "IM-001", "uc_codes": ["UC-001"], "dt_codes": ["DT-001"], "ch_codes": ["CH-001"], "rs_codes": ["RS-001"], "ev_codes": ["EV-001"], "ob_codes": [], "aimo_standard_version": "0.1.7"}]'
                 }
             }],
             "usage": {"prompt_tokens": 100, "completion_tokens": 200}

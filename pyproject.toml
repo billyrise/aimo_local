@@ -5,6 +5,23 @@ description = "AIMO Analysis Engine - GenAI usage analysis from firewall logs"
 requires-python = ">=3.11"
 readme = "README.md"
 license = {text = "Proprietary"}
+dependencies = [
+    "duckdb>=1.4.4",
+    "polars>=1.37.1",
+    "pyarrow>=23.0.0",
+    "pyyaml>=6.0.3",
+    "jsonschema>=4.26.0",
+    "requests>=2.32.5",
+    "xlsxwriter>=3.2.9",
+    "python-dateutil>=2.9.0.post0",
+    "tldextract>=5.3.1",
+    "openpyxl>=3.1.5",
+    "httpx>=0.28.1",
+    "tenacity>=9.1.2",
+    "psutil>=7.2.2",
+    "rapidfuzz>=3.14.3",
+    "filelock>=3.20.3",
+]
 
 [project.optional-dependencies]
 dev = [
@@ -61,3 +78,8 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v"
+
+[tool.rye]
+dev-dependencies = [
+    "pytest>=9.0.2",
+]
