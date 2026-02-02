@@ -24,7 +24,7 @@ Usage:
 from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional, Tuple
 
-from utils.json_canonical import parse_json_array, canonical_json_array
+from utils.json_canonical import parse_json_array
 
 
 @dataclass
