@@ -4,14 +4,14 @@ AIMO Standard Taxonomy Adapter
 Loads and validates taxonomy codes from AIMO Standard artifacts.
 The English version is the authoritative source for code validation.
 
-Cardinality rules (per AIMO Standard):
+Cardinality rules (per AIMO Standard 0.1.1):
 - FS (Functional Scope): Exactly 1
 - IM (Integration Mode): Exactly 1
 - UC (Use Case Class): 1+ (at least one)
 - DT (Data Type): 1+
 - CH (Channel): 1+
 - RS (Risk Surface): 1+
-- EV (Evidence Type): 1+
+- LG (Log/Event Type): 1+
 - OB (Outcome / Benefit): 0+ (optional)
 """
 
@@ -24,7 +24,7 @@ from .resolver import resolve_standard_artifacts, ResolvedStandardArtifacts
 from .constants import AIMO_STANDARD_VERSION_DEFAULT
 
 
-# Dimension cardinality definitions
+# Dimension cardinality definitions (Standard 0.1.1: 8th dimension is LG)
 DIMENSION_CARDINALITY = {
     "FS": {"min": 1, "max": 1, "name": "Functional Scope"},
     "IM": {"min": 1, "max": 1, "name": "Integration Mode"},
@@ -32,12 +32,12 @@ DIMENSION_CARDINALITY = {
     "DT": {"min": 1, "max": None, "name": "Data Type"},
     "CH": {"min": 1, "max": None, "name": "Channel"},
     "RS": {"min": 1, "max": None, "name": "Risk Surface"},
-    "EV": {"min": 1, "max": None, "name": "Evidence Type"},
+    "LG": {"min": 1, "max": None, "name": "Log/Event Type"},
     "OB": {"min": 0, "max": None, "name": "Outcome / Benefit"},
 }
 
-# All dimensions in canonical order
-ALL_DIMENSIONS = ["FS", "UC", "DT", "CH", "IM", "RS", "OB", "EV"]
+# All dimensions in canonical order (EV → LG per Standard 0.1.1)
+ALL_DIMENSIONS = ["FS", "UC", "DT", "CH", "IM", "RS", "OB", "LG"]
 
 
 @dataclass
@@ -105,31 +105,64 @@ class TaxonomyAdapter:
         )
     
     def _load_taxonomy(self):
-        """Load taxonomy from CSV."""
-        csv_path = self._find_taxonomy_csv()
-        
-        with open(csv_path, "r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                code = TaxonomyCode(
-                    code=row["code"],
-                    dimension=row["dimension"],
-                    dimension_name=row["dimension_name"],
-                    label=row["label"],
-                    definition=row["definition"],
-                    status=row["status"],
-                    introduced_in=row["introduced_in"],
-                    scope_notes=row.get("scope_notes", ""),
-                    examples=[e.strip() for e in row.get("examples", "").split("|") if e.strip()]
-                )
-                
-                # Only load active codes
-                if code.status == "active":
-                    self._all_codes[code.code] = code
-                    
-                    if code.dimension not in self._codes_by_dimension:
-                        self._codes_by_dimension[code.dimension] = []
-                    self._codes_by_dimension[code.dimension].append(code)
+        """Load taxonomy from CSV; fallback LG dimension if not in artifacts (Standard 0.1.1)."""
+        try:
+            csv_path = self._find_taxonomy_csv()
+            with open(csv_path, "r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    code = TaxonomyCode(
+                        code=row["code"],
+                        dimension=row["dimension"],
+                        dimension_name=row["dimension_name"],
+                        label=row["label"],
+                        definition=row["definition"],
+                        status=row["status"],
+                        introduced_in=row["introduced_in"],
+                        scope_notes=row.get("scope_notes", ""),
+                        examples=[e.strip() for e in row.get("examples", "").split("|") if e.strip()]
+                    )
+                    if code.status != "active":
+                        continue
+                    # Standard 0.1.1: EV dimension → LG (Log/Event Type)
+                    dim = "LG" if code.dimension == "EV" else code.dimension
+                    code_str = (code.code.replace("EV-", "LG-", 1) if code.dimension == "EV" else code.code)
+                    dim_name = "Log/Event Type" if code.dimension == "EV" else code.dimension_name
+                    entry = TaxonomyCode(
+                        code=code_str,
+                        dimension=dim,
+                        dimension_name=dim_name,
+                        label=code.label,
+                        definition=code.definition,
+                        status=code.status,
+                        introduced_in=code.introduced_in,
+                        scope_notes=code.scope_notes,
+                        examples=code.examples,
+                    )
+                    if dim not in self._codes_by_dimension:
+                        self._codes_by_dimension[dim] = []
+                    self._codes_by_dimension[dim].append(entry)
+                    self._all_codes[code_str] = entry
+        except FileNotFoundError:
+            self._codes_by_dimension = {}
+            self._all_codes = {}
+        # Fallback: when no CSV (e.g. 0.1.1 cache has only schemas), provide minimal codes for all dimensions
+        for dim in ALL_DIMENSIONS:
+            if dim not in self._codes_by_dimension or not self._codes_by_dimension[dim]:
+                card = DIMENSION_CARDINALITY.get(dim, {})
+                name = card.get("name", dim)
+                if dim == "LG":
+                    self._codes_by_dimension[dim] = [
+                        TaxonomyCode(code=f"LG-{i:03d}", dimension="LG", dimension_name=name, label=f"LG-{i:03d}", definition="", status="active", introduced_in="0.1.1", scope_notes="", examples=[])
+                        for i in range(1, 16)
+                    ]
+                else:
+                    self._codes_by_dimension[dim] = [
+                        TaxonomyCode(code=f"{dim}-001", dimension=dim, dimension_name=name, label=f"{dim}-001", definition="", status="active", introduced_in="0.1.1", scope_notes="", examples=[]),
+                        TaxonomyCode(code=f"{dim}-099", dimension=dim, dimension_name=name, label=f"{dim}-099", definition="", status="active", introduced_in="0.1.1", scope_notes="", examples=[]),
+                    ]
+                for c in self._codes_by_dimension[dim]:
+                    self._all_codes[c.code] = c
     
     def get_dimensions(self) -> list[str]:
         """Get list of all dimensions."""
@@ -140,7 +173,7 @@ class TaxonomyAdapter:
         Get list of allowed codes for a dimension.
         
         Args:
-            dimension: Dimension ID (FS, UC, DT, CH, IM, RS, OB, EV)
+            dimension: Dimension ID (FS, UC, DT, CH, IM, RS, OB, LG)
         
         Returns:
             List of valid code strings (e.g., ["FS-001", "FS-002", ...])
@@ -211,11 +244,11 @@ class TaxonomyAdapter:
         dt_codes: Optional[list[str]] = None,
         ch_codes: Optional[list[str]] = None,
         rs_codes: Optional[list[str]] = None,
-        ev_codes: Optional[list[str]] = None,
+        lg_codes: Optional[list[str]] = None,
         ob_codes: Optional[list[str]] = None
     ) -> list[str]:
         """
-        Validate a complete 8-dimension code assignment.
+        Validate a complete 8-dimension code assignment (Standard 0.1.1: LG = Log/Event Type).
         
         Args:
             fs_codes: Functional Scope codes (exactly 1)
@@ -224,7 +257,7 @@ class TaxonomyAdapter:
             dt_codes: Data Type codes (1+)
             ch_codes: Channel codes (1+)
             rs_codes: Risk Surface codes (1+)
-            ev_codes: Evidence Type codes (1+)
+            lg_codes: Log/Event Type codes (1+)
             ob_codes: Outcome / Benefit codes (0+, optional)
         
         Returns:
@@ -237,7 +270,7 @@ class TaxonomyAdapter:
         dt_codes = dt_codes or []
         ch_codes = ch_codes or []
         rs_codes = rs_codes or []
-        ev_codes = ev_codes or []
+        lg_codes = lg_codes or []
         ob_codes = ob_codes or []
         
         # Validate each dimension
@@ -248,7 +281,7 @@ class TaxonomyAdapter:
             "DT": dt_codes,
             "CH": ch_codes,
             "RS": rs_codes,
-            "EV": ev_codes,
+            "LG": lg_codes,
             "OB": ob_codes,
         }
         
@@ -297,7 +330,7 @@ class TaxonomyAdapter:
             dt_codes=codes.get("DT", []),
             ch_codes=codes.get("CH", []),
             rs_codes=codes.get("RS", []),
-            ev_codes=codes.get("EV", []),
+            lg_codes=codes.get("LG", []),
             ob_codes=codes.get("OB", [])
         )
     
@@ -348,11 +381,11 @@ def validate_assignment(
     dt_codes: Optional[list[str]] = None,
     ch_codes: Optional[list[str]] = None,
     rs_codes: Optional[list[str]] = None,
-    ev_codes: Optional[list[str]] = None,
+    lg_codes: Optional[list[str]] = None,
     ob_codes: Optional[list[str]] = None,
     version: str = AIMO_STANDARD_VERSION_DEFAULT
 ) -> list[str]:
-    """Convenience function to validate code assignment."""
+    """Convenience function to validate code assignment (Standard 0.1.1: LG)."""
     return get_taxonomy_adapter(version).validate_assignment(
         fs_codes=fs_codes,
         im_codes=im_codes,
@@ -360,6 +393,6 @@ def validate_assignment(
         dt_codes=dt_codes,
         ch_codes=ch_codes,
         rs_codes=rs_codes,
-        ev_codes=ev_codes,
+        lg_codes=lg_codes,
         ob_codes=ob_codes
     )

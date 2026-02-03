@@ -1,7 +1,7 @@
 """
 Tests for AIMO Standard Taxonomy (8 dimensions) support.
 
-AIMO Standard v0.1.7+ taxonomy structure:
+AIMO Standard v0.1.1 taxonomy structure (8 dimensions including LG):
 - 8 dimensions: FS, UC, DT, CH, IM, RS, OB, EV
 - Cardinality:
   - FS: Exactly 1
@@ -135,7 +135,7 @@ class TestCodesConversion:
             "DT": ["DT-001"],
             "CH": ["CH-001"],
             "RS": ["RS-001"],
-            "EV": ["EV-001"],
+            "LG": ["LG-001"],
             "OB": [],  # Empty optional
         }
         result = dict_to_db_columns(codes_dict)
@@ -269,7 +269,7 @@ class TestRunKeyIncludesStandardVersion:
             orchestrator2 = Orchestrator(
                 db_client=db_client,
                 work_base_dir=Path(tmpdir) / "work",
-                aimo_standard_version="0.1.7",
+                aimo_standard_version="0.1.1",
                 resolve_standard=False
             )
             
@@ -294,14 +294,14 @@ class TestRunKeyIncludesStandardVersion:
             orchestrator1 = Orchestrator(
                 db_client=db_client,
                 work_base_dir=Path(tmpdir) / "work",
-                aimo_standard_version="0.1.7",
+                aimo_standard_version="0.1.1",
                 resolve_standard=False
             )
             
             orchestrator2 = Orchestrator(
                 db_client=db_client,
                 work_base_dir=Path(tmpdir) / "work",
-                aimo_standard_version="0.1.7",
+                aimo_standard_version="0.1.1",
                 resolve_standard=False
             )
             
@@ -355,7 +355,7 @@ class TestLegacyColumnsKept:
             "rs_codes_json": '["RS-001"]',
             "ev_codes_json": '["EV-001"]',
             "ob_codes_json": '[]',
-            "taxonomy_schema_version": "0.1.7",
+            "taxonomy_schema_version": "0.1.1",
         }, conflict_key="url_signature")
         temp_db.flush()
         
@@ -372,7 +372,7 @@ class TestLegacyColumnsKept:
         assert result[1] == "FS-001"  # New
         assert result[2] == "IM-001"  # New
         assert result[3] == '["UC-001"]'  # New JSON
-        assert result[4] == "0.1.7"  # Schema version
+        assert result[4] == "0.1.1"  # Schema version
 
 
 class TestStandardAdapterIntegration:
@@ -391,9 +391,9 @@ class TestStandardAdapterIntegration:
                 dt_codes=["DT-001"],
                 ch_codes=["CH-001"],
                 rs_codes=["RS-001"],
-                ev_codes=["EV-001"],
+                lg_codes=["LG-001"],
                 ob_codes=[],  # Optional
-                version="0.1.7"
+                version="0.1.1"
             )
             assert len(errors) == 0
             
@@ -405,8 +405,8 @@ class TestStandardAdapterIntegration:
                 dt_codes=["DT-001"],
                 ch_codes=["CH-001"],
                 rs_codes=["RS-001"],
-                ev_codes=["EV-001"],
-                version="0.1.7"
+                lg_codes=["LG-001"],
+                version="0.1.1"
             )
             assert len(errors) > 0
             
@@ -426,8 +426,8 @@ class TestStandardAdapterIntegration:
                 dt_codes=["DT-001"],
                 ch_codes=["CH-001"],
                 rs_codes=["RS-001"],
-                ev_codes=["EV-001"],
-                version="0.1.7"
+                lg_codes=["LG-001"],
+                version="0.1.1"
             )
             assert any("FS" in e or "at most 1" in e for e in errors)
             
@@ -447,8 +447,8 @@ class TestStandardAdapterIntegration:
                 dt_codes=["DT-001"],
                 ch_codes=["CH-001"],
                 rs_codes=["RS-001"],
-                ev_codes=["EV-001"],
-                version="0.1.7"
+                lg_codes=["LG-001"],
+                version="0.1.1"
             )
             assert any("UC" in e or "Use Case" in e for e in errors)
             
@@ -468,9 +468,9 @@ class TestStandardAdapterIntegration:
                 dt_codes=["DT-001"],
                 ch_codes=["CH-001"],
                 rs_codes=["RS-001"],
-                ev_codes=["EV-001"],
+                lg_codes=["LG-001"],
                 ob_codes=[],  # Empty - should be OK
-                version="0.1.7"
+                version="0.1.1"
             )
             # Should not have OB-related errors
             ob_errors = [e for e in errors if "OB" in e or "Outcome" in e]

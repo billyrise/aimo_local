@@ -24,15 +24,15 @@ if TYPE_CHECKING:
 # =============================================================================
 
 # Current pinned AIMO Standard version
-PINNED_STANDARD_VERSION = "0.1.7"
+PINNED_STANDARD_VERSION = "0.1.1"
 
-# Git commit hash that v0.1.7 tag points to
+# Git commit hash that v0.1.1 tag points to
 # If this changes, the tag was mutated (a serious issue in Standard repo)
-PINNED_STANDARD_COMMIT = "88ab75d286a252ed10aa14fe045f72304602a61f"
+PINNED_STANDARD_COMMIT = "556fa4ddb1bcce3c5169e3d36b7697a94a80a2ff"
 
-# SHA256 of the artifacts directory
+# SHA256 of the artifacts directory (cache after sync)
 # If this changes, artifact contents were modified
-PINNED_ARTIFACTS_DIR_SHA256 = "057228a570b5d6c5d0429cd5df99c14dffd266ca1001e7c075d0eed99ba2cfbc"
+PINNED_ARTIFACTS_DIR_SHA256 = "02c8f54602904174b68ba5e17b0b7c36123225a5f1c42baa197f64e866981db0"
 
 # Optional: SHA256 of artifacts zip (if distributed as zip)
 # Set to None if zip is not used

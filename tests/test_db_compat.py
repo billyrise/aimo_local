@@ -34,9 +34,9 @@ class TestTaxonomyRecord:
         assert record.dt_codes == []
         assert record.ch_codes == []
         assert record.rs_codes == []
-        assert record.ev_codes == []
+        assert record.lg_codes == []
         assert record.ob_codes == []
-        assert record.taxonomy_version == "0.1.7"
+        assert record.taxonomy_version == "0.1.1"
         assert record.needs_review == False
         assert record.source_format == "new"
     
@@ -46,7 +46,10 @@ class TestTaxonomyRecord:
             fs_code="FS-001",
             im_code="IM-001",
             uc_codes=["UC-001", "UC-002"],
-            dt_codes=["DT-001"]
+            dt_codes=["DT-001"],
+            ch_codes=[],
+            rs_codes=[],
+            lg_codes=[],
         )
         
         d = record.to_dict()
@@ -71,7 +74,7 @@ class TestTaxonomyRecord:
         assert d["needs_review"] == True
     
     def test_is_complete_true(self):
-        """Test completeness check for complete record."""
+        """Test completeness check for complete record (Standard 0.1.1: lg_codes)."""
         record = TaxonomyRecord(
             fs_code="FS-001",
             im_code="IM-001",
@@ -79,7 +82,7 @@ class TestTaxonomyRecord:
             dt_codes=["DT-001"],
             ch_codes=["CH-001"],
             rs_codes=["RS-001"],
-            ev_codes=["EV-001"],
+            lg_codes=["LG-001"],
             ob_codes=[]  # Optional
         )
         
@@ -94,7 +97,7 @@ class TestTaxonomyRecord:
             dt_codes=["DT-001"],
             ch_codes=["CH-001"],
             rs_codes=["RS-001"],
-            ev_codes=["EV-001"],
+            lg_codes=["LG-001"],
         )
         
         assert record.is_complete() == False
@@ -112,9 +115,9 @@ class TestNormalizeTaxonomyRecord:
             "dt_codes_json": '["DT-001"]',
             "ch_codes_json": '["CH-001"]',
             "rs_codes_json": '["RS-001"]',
-            "ev_codes_json": '["EV-001"]',
+            "ev_codes_json": '["LG-001"]',
             "ob_codes_json": '[]',
-            "taxonomy_schema_version": "0.1.7"
+            "taxonomy_schema_version": "0.1.1"
         }
         
         record = normalize_taxonomy_record(row)
@@ -142,7 +145,7 @@ class TestNormalizeTaxonomyRecord:
             "dt_code": "DT-002",
             "ch_code": "CH-002",
             "rs_code": "RS-002",
-            "ev_code": "EV-002",
+            "ev_code": "LG-002",  # Legacy column stores LG code (Standard 0.1.1)
             "ob_code": "OB-001",
         }
         
@@ -152,7 +155,7 @@ class TestNormalizeTaxonomyRecord:
         assert record.im_code == "IM-001"
         assert record.dt_codes == ["DT-002"]
         assert record.ch_codes == ["CH-002"]
-        assert record.ev_codes == ["EV-002"]
+        assert record.lg_codes == ["LG-002"]
         assert record.needs_review == True
         assert record.source_format == "legacy"
     
@@ -164,7 +167,7 @@ class TestNormalizeTaxonomyRecord:
             "dt_codes_json": '["DT-001"]',
             "ch_codes_json": '["CH-001"]',
             "rs_codes_json": '["RS-001"]',
-            "ev_codes_json": '["EV-001"]',
+            "ev_codes_json": '["LG-001"]',
             "ob_codes_json": '[]',
             "uc_codes_json": '["UC-001"]',
             # Legacy (should be ignored)
@@ -188,7 +191,7 @@ class TestNormalizeTaxonomyRecord:
             "dt_codes_json": "[]",  # Empty
             "ch_codes_json": '["CH-001"]',
             "rs_codes_json": '["RS-001"]',
-            "ev_codes_json": '["EV-001"]',
+            "ev_codes_json": '["LG-001"]',
             "ob_codes_json": '[]',
             # Legacy fallback
             "dt_code": "DT-LEGACY",
@@ -210,7 +213,7 @@ class TestNormalizeTaxonomyRecord:
             "dt_codes_json": '["DT-001"]',
             "ch_codes_json": '["CH-001"]',
             "rs_codes_json": '["RS-001"]',
-            "ev_codes_json": '["EV-001"]',
+            "ev_codes_json": '["LG-001"]',
             "ob_codes_json": '[]',
             "fs_uc_code": "DEPRECATED",
         }
@@ -229,7 +232,7 @@ class TestNormalizeTaxonomyRecord:
             "dt_codes_json": '["DT-001"]',
             "ch_codes_json": '["CH-001"]',
             "rs_codes_json": '["RS-001"]',
-            "ev_codes_json": '["EV-001"]',
+            "ev_codes_json": '["LG-001"]',
             "ob_codes_json": '[]',
         }
         
@@ -250,7 +253,7 @@ class TestNormalizeDbRows:
              "ob_codes_json": '[]'},
             {"fs_code": "FS-002", "im_code": "IM-002", "uc_codes_json": '["UC-002"]',
              "dt_codes_json": '["DT-002"]', "ch_codes_json": '["CH-002"]',
-             "rs_codes_json": '["RS-002"]', "ev_codes_json": '["EV-002"]',
+             "rs_codes_json": '["RS-002"]', "ev_codes_json": '["LG-002"]',
              "ob_codes_json": '[]'},
         ]
         
@@ -322,7 +325,7 @@ class TestGetMigrationStatus:
             "dt_codes_json": '["DT-001"]',
             "ch_codes_json": '["CH-001"]',
             "rs_codes_json": '["RS-001"]',
-            "ev_codes_json": '["EV-001"]',
+            "ev_codes_json": '["LG-001"]',
             "ob_codes_json": '[]',
         }
         
@@ -369,7 +372,7 @@ class TestGetMigrationStatus:
         assert "IM" in status["missing_dimensions"]
         assert "UC" in status["missing_dimensions"]
         assert "CH" in status["missing_dimensions"]
-        assert "EV" in status["missing_dimensions"]
+        assert "LG" in status["missing_dimensions"]
         assert status["needs_migration"] == True
 
 

@@ -4,10 +4,10 @@ Contract E2E Test: Evidence Bundle Generation + Validator PASS
 This test ensures that:
 1. Evidence Bundle can be generated with stub classifier (no LLM)
 2. validation_result.json is generated
-3. Validator PASSES for Standard v0.1.7
+3. Validator PASSES for Standard v0.1.1
 
 CRITICAL CONTRACT:
-- This test MUST pass for Standard v0.1.7
+- This test MUST pass for Standard v0.1.1
 - When Standard is updated, this test failing is EXPECTED
 - A failing test indicates Engine needs to adapt to new Standard
 
@@ -138,16 +138,16 @@ def db_with_minimal_data(temp_db, minimal_run_context):
         dt_code = adapter.get_allowed_codes("DT")[0]
         ch_code = adapter.get_allowed_codes("CH")[0]
         rs_code = adapter.get_allowed_codes("RS")[0]
-        ev_code = adapter.get_allowed_codes("EV")[0]
+        lg_code = adapter.get_allowed_codes("LG")[0]
     except Exception:
-        # Fallback if adapter not available
+        # Fallback if adapter not available (Standard 0.1.1: LG dimension)
         fs_code = "FS-001"
         im_code = "IM-001"
         uc_code = "UC-001"
         dt_code = "DT-001"
         ch_code = "CH-001"
         rs_code = "RS-001"
-        ev_code = "EV-001"
+        lg_code = "LG-001"
     
     # Insert run record
     temp_db.upsert("runs", {
@@ -190,7 +190,7 @@ def db_with_minimal_data(temp_db, minimal_run_context):
         "dt_codes_json": json.dumps([dt_code]),
         "ch_codes_json": json.dumps([ch_code]),
         "rs_codes_json": json.dumps([rs_code]),
-        "ev_codes_json": json.dumps([ev_code]),
+        "ev_codes_json": json.dumps([lg_code]),
         "ob_codes_json": "[]",
         "taxonomy_schema_version": PINNED_STANDARD_VERSION,
         "status": "active"
@@ -206,7 +206,7 @@ class TestEvidenceBundleValidatorPass:
     Contract E2E tests for Evidence Bundle generation with Validator PASS.
     
     These tests ensure the Engine can generate Standard-compliant Evidence Bundles
-    that pass validation. This is a critical contract with AIMO Standard v0.1.7.
+    that pass validation. This is a critical contract with AIMO Standard v0.1.1.
     """
     
     def test_validation_result_json_is_generated(
@@ -234,11 +234,11 @@ class TestEvidenceBundleValidatorPass:
         assert result.validation_result_path.exists(), \
             f"validation_result.json not found at {result.validation_result_path}"
     
-    def test_validator_passes_for_standard_v0_1_7(
+    def test_validator_passes_for_standard_v0_1_1(
         self, db_with_minimal_data, minimal_run_context
     ):
         """
-        CRITICAL CONTRACT: Fallback Validator MUST PASS for Standard v0.1.7.
+        CRITICAL CONTRACT: Fallback Validator MUST PASS for Standard v0.1.1 (pinned).
         
         This test ensures:
         1. Evidence Bundle is generated with Standard-compliant structure

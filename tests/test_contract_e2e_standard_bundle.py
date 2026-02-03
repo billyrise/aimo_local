@@ -8,7 +8,7 @@ This test verifies the complete contract between Engine and AIMO Standard:
 4. PASS result
 
 This test is MANDATORY in CI. It ensures:
-- AIMO Standard v0.1.7 compliance
+- AIMO Standard v0.1.1 compliance
 - Pinning is enforced
 - Evidence Bundle structure is correct
 - Validator accepts our output
@@ -165,7 +165,7 @@ class TestContractE2EStandardBundle:
         assert "dt_codes" in result, "Missing dt_codes"
         assert "ch_codes" in result, "Missing ch_codes"
         assert "rs_codes" in result, "Missing rs_codes"
-        assert "ev_codes" in result, "Missing ev_codes"
+        assert "lg_codes" in result, "Missing lg_codes"
         assert "ob_codes" in result, "Missing ob_codes"
         
         # Verify cardinality
@@ -175,7 +175,7 @@ class TestContractE2EStandardBundle:
         assert isinstance(result["dt_codes"], list) and len(result["dt_codes"]) >= 1, "dt_codes must have 1+"
         assert isinstance(result["ch_codes"], list) and len(result["ch_codes"]) >= 1, "ch_codes must have 1+"
         assert isinstance(result["rs_codes"], list) and len(result["rs_codes"]) >= 1, "rs_codes must have 1+"
-        assert isinstance(result["ev_codes"], list) and len(result["ev_codes"]) >= 1, "ev_codes must have 1+"
+        assert isinstance(result["lg_codes"], list) and len(result["lg_codes"]) >= 1, "lg_codes must have 1+"
         assert isinstance(result["ob_codes"], list), "ob_codes must be list (0+)"
         
         # Verify codes start with correct prefix
@@ -294,7 +294,7 @@ class TestContractE2EStandardBundle:
         classifier = StubClassifier(version=PINNED_STANDARD_VERSION)
         
         # Verify codes match what's in adapter
-        for dim in ["FS", "IM", "UC", "DT", "CH", "RS", "EV"]:
+        for dim in ["FS", "IM", "UC", "DT", "CH", "RS", "LG"]:
             allowed_codes = adapter.get_allowed_codes(dim)
             assert len(allowed_codes) > 0, f"No codes found for {dim} in Standard"
             

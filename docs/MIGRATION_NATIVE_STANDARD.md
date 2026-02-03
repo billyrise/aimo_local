@@ -1,6 +1,6 @@
-# Migration to AIMO Standard v0.1.7 Native Integration
+# Migration to AIMO Standard v0.1.1 Native Integration
 
-This document describes the migration path from legacy 7-code taxonomy to AIMO Standard v0.1.7 native 8-dimension taxonomy.
+This document describes the migration path from legacy 7-code taxonomy to AIMO Standard v0.1.1 native 8-dimension taxonomy.
 
 ## Overview
 
@@ -9,17 +9,18 @@ This document describes the migration path from legacy 7-code taxonomy to AIMO S
 - **Format**: Single values per dimension
 - **Standard**: Not version-locked
 
-### After Migration (Native Standard)
-- **Taxonomy**: 8 dimensions (`FS`, `IM`, `UC`, `DT`, `CH`, `RS`, `EV`, `OB`)
-- **Format**: Arrays for UC/DT/CH/RS/EV/OB (cardinality 1+ or 0+)
-- **Standard**: Locked to AIMO Standard v0.1.7 with artifact SHA verification
+### After Migration (Native Standard v0.1.1)
+- **Taxonomy**: 8 dimensions (`FS`, `IM`, `UC`, `DT`, `CH`, `RS`, **`LG`** (Log/Event Type), `OB`). **EV** is reserved for Evidence artifact IDs (EP-01..EP-07).
+- **Format**: Arrays for UC/DT/CH/RS/LG/OB (cardinality 1+ or 0+)
+- **Standard**: Locked to AIMO Standard v0.1.1 with artifact SHA verification
+- **Evidence Bundle root structure (v0.1)**: Root must have `manifest.json`, `objects/`, `payloads/`, `signatures/`, `hashes/`. Payloads (run_manifest, evidence_pack_manifest, logs, analysis, dictionary.json, summary.json, change_log.json) live under `payloads/`.
 
 ## Schema Changes
 
 ### New Columns (added)
 | Table | Column | Type | Description |
 |-------|--------|------|-------------|
-| `runs` | `aimo_standard_version` | VARCHAR | Standard version (e.g., "0.1.7") |
+| `runs` | `aimo_standard_version` | VARCHAR | Standard version (e.g., "0.1.1") |
 | `runs` | `aimo_standard_commit` | VARCHAR | Git commit hash |
 | `runs` | `aimo_standard_artifacts_dir_sha256` | VARCHAR | Artifacts SHA |
 | `analysis_cache` | `fs_code` | VARCHAR | Functional Scope (single) |
@@ -27,7 +28,7 @@ This document describes the migration path from legacy 7-code taxonomy to AIMO S
 | `analysis_cache` | `dt_codes_json` | VARCHAR | Data Type (JSON array) |
 | `analysis_cache` | `ch_codes_json` | VARCHAR | Channel (JSON array) |
 | `analysis_cache` | `rs_codes_json` | VARCHAR | Risk Surface (JSON array) |
-| `analysis_cache` | `ev_codes_json` | VARCHAR | Evidence Type (JSON array) |
+| `analysis_cache` | `ev_codes_json` / `lg_codes_json` | VARCHAR | Log/Event Type (LG) — JSON array; legacy column name `ev_codes_json` retained for compatibility |
 | `analysis_cache` | `ob_codes_json` | VARCHAR | Outcome/Benefit (JSON array) |
 | `analysis_cache` | `taxonomy_schema_version` | VARCHAR | Schema version |
 
@@ -75,7 +76,7 @@ New records are always written in new format:
 from utils.json_canonical import classification_to_db_record
 
 # Convert classification to DB format
-db_record = classification_to_db_record(classification, "0.1.7")
+db_record = classification_to_db_record(classification, "0.1.1")
 ```
 
 ## Evidence Bundle Output
@@ -86,9 +87,11 @@ All Evidence Bundle outputs use the new 8-dimension format:
 - `analysis/taxonomy_assignments.json`: 8-dimension codes
 - `logs/shadow_ai_discovery.jsonl`: Standard schema
 
-Legacy outputs are placed in `derived/` subdirectory:
-- `derived/evidence_pack_summary.json`: Legacy format (for reference)
-- `derived/evidence_pack_summary.xlsx`: Legacy Excel format
+Evidence Bundle root (v0.1): `manifest.json`, `objects/`, `payloads/`, `signatures/`, `hashes/`. All run_manifest, evidence_pack_manifest, logs, analysis, dictionary.json, summary.json, change_log.json are under `payloads/`.
+
+Legacy outputs are placed in `payloads/derived/`:
+- `payloads/derived/evidence_pack_summary.json`: Legacy format (for reference)
+- `payloads/derived/evidence_pack_summary.xlsx`: Legacy Excel format
 
 ## Migration Procedures
 
@@ -135,7 +138,7 @@ For a complete refresh with new taxonomy:
 python -m src.main \
   --input-dir data/input/your_logs \
   --force-rerun \
-  --aimo-standard-version 0.1.7
+  --aimo-standard-version 0.1.1
 ```
 
 This creates a new run (new `run_id`) with fresh classifications.
@@ -170,7 +173,7 @@ print(status)
 ### CI Validation
 
 The CI pipeline validates:
-- Standard submodule is present and at v0.1.7
+- Standard submodule is present and at v0.1.1
 - Artifacts sync successfully
 - Evidence Bundle passes validation
 
@@ -203,6 +206,6 @@ If results differ between runs:
 
 ## References
 
-- [AIMO Standard v0.1.7](../third_party/aimo-standard/)
+- [AIMO Standard v0.1.1](../third_party/aimo-standard/)
 - [Taxonomy Dictionary](../third_party/aimo-standard/artifacts/taxonomy/)
 - [Evidence Bundle Schema](../third_party/aimo-standard/schemas/jsonschema/evidence_pack_manifest.schema.json)

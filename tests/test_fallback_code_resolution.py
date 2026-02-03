@@ -45,7 +45,7 @@ class TestFallbackCodeResolution:
                         # Minimal initialization
                         client._taxonomy_adapter = mock_taxonomy_adapter
                         client._fallback_code_cache = {}
-                        client.aimo_standard_version = "0.1.7"
+                        client.aimo_standard_version = "0.1.1"
                         return client
     
     def test_priority_1_unknown_in_label(self, llm_client_with_mock_adapter, mock_taxonomy_adapter):
@@ -249,7 +249,7 @@ class TestUnknownClassificationUsesFallback:
                         
                         client._taxonomy_adapter = mock_adapter
                         client._fallback_code_cache = {}
-                        client.aimo_standard_version = "0.1.7"
+                        client.aimo_standard_version = "0.1.1"
                         
                         # Mock _get_fallback_code to track calls
                         fallback_calls = []
@@ -271,7 +271,7 @@ class TestUnknownClassificationUsesFallback:
                         assert "DT" in fallback_calls
                         assert "CH" in fallback_calls
                         assert "RS" in fallback_calls
-                        assert "EV" in fallback_calls
+                        assert "LG" in fallback_calls
                         
                         # Verify result uses fallback codes
                         assert result["fs_code"] == "FS-FALLBACK"

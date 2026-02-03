@@ -310,7 +310,7 @@ class LLMClient:
         5. Static fallback {DIM}-099 (only if adapter unavailable)
         
         Args:
-            dim: Dimension code (e.g., "FS", "IM", "UC", "DT", "CH", "RS", "EV", "OB")
+            dim: Dimension code (e.g., "FS", "IM", "UC", "DT", "CH", "RS", "LG", "OB")
         
         Returns:
             A valid fallback code for the dimension
@@ -713,7 +713,7 @@ class LLMClient:
             "dt_codes": [self._get_fallback_code("DT")],
             "ch_codes": [self._get_fallback_code("CH")],
             "rs_codes": [self._get_fallback_code("RS")],
-            "ev_codes": [self._get_fallback_code("EV")],
+            "lg_codes": [self._get_fallback_code("LG")],
             "ob_codes": [],  # OB is 0+ cardinality, empty is valid
             "aimo_standard_version": self.aimo_standard_version
         }
@@ -754,10 +754,10 @@ class LLMClient:
             normalized["im_code"] = self._get_fallback_code("IM")
         
         # Ensure array fields (use dynamic fallback codes)
-        for field in ["uc_codes", "dt_codes", "ch_codes", "rs_codes", "ev_codes", "ob_codes"]:
+        for field in ["uc_codes", "dt_codes", "ch_codes", "rs_codes", "lg_codes", "ob_codes"]:
             if field not in normalized or not isinstance(normalized.get(field), list):
-                # Use dynamic fallback from Standard Adapter
-                dim = field.replace("_codes", "").upper()
+                # Use dynamic fallback from Standard Adapter (lg_codes -> LG)
+                dim = "LG" if field == "lg_codes" else (field.replace("_codes", "").upper())
                 normalized[field] = [self._get_fallback_code(dim)] if field != "ob_codes" else []
         
         # Validate cardinality
@@ -769,12 +769,11 @@ class LLMClient:
         if not normalized.get("im_code"):
             validation_errors.append("im_code is required")
         
-        # UC, DT, CH, RS, EV must have at least 1
-        for field in ["uc_codes", "dt_codes", "ch_codes", "rs_codes", "ev_codes"]:
+        # UC, DT, CH, RS, LG must have at least 1
+        for field in ["uc_codes", "dt_codes", "ch_codes", "rs_codes", "lg_codes"]:
             if not normalized.get(field) or len(normalized[field]) < 1:
                 validation_errors.append(f"{field} requires at least 1 element")
-                # Add dynamic fallback from Standard Adapter
-                dim = field.replace("_codes", "").upper()
+                dim = "LG" if field == "lg_codes" else (field.replace("_codes", "").upper())
                 normalized[field] = [self._get_fallback_code(dim)]
         
         # Validate against taxonomy adapter if available
@@ -789,7 +788,7 @@ class LLMClient:
                     dt_codes=normalized["dt_codes"],
                     ch_codes=normalized["ch_codes"],
                     rs_codes=normalized["rs_codes"],
-                    ev_codes=normalized["ev_codes"],
+                    lg_codes=normalized.get("lg_codes", normalized.get("ev_codes", [])),
                     ob_codes=normalized.get("ob_codes", []),
                     version=self.aimo_standard_version
                 )
@@ -833,20 +832,19 @@ class LLMClient:
         if "im_code" not in result or not result["im_code"]:
             result["im_code"] = self._get_fallback_code("IM")
         
-        # Convert single codes to arrays
+        # Convert single codes to arrays (ev_code -> lg_codes per Standard 0.1.1)
         for old_field, new_field in [
             ("dt_code", "dt_codes"),
             ("ch_code", "ch_codes"),
             ("rs_code", "rs_codes"),
             ("ob_code", "ob_codes"),
-            ("ev_code", "ev_codes")
+            ("ev_code", "lg_codes")
         ]:
             old_val = legacy.get(old_field, "")
             if old_val:
                 result[new_field] = [old_val]
             else:
-                dim = old_field.replace("_code", "").upper()
-                # OB has 0+ cardinality, use empty array; others use fallback
+                dim = "LG" if new_field == "lg_codes" else (old_field.replace("_code", "").upper())
                 result[new_field] = [self._get_fallback_code(dim)] if new_field != "ob_codes" else []
         
         # UC from fs_uc_code is not directly extractable - use dynamic fallback

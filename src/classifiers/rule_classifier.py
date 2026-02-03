@@ -398,7 +398,7 @@ class RuleClassifier:
             dt_codes = taxonomy_codes.get("dt_codes", [])
             ch_codes = taxonomy_codes.get("ch_codes", [])
             rs_codes = taxonomy_codes.get("rs_codes", [])
-            ev_codes = taxonomy_codes.get("ev_codes", [])
+            lg_codes = taxonomy_codes.get("lg_codes", []) or taxonomy_codes.get("ev_codes", [])
             ob_codes = taxonomy_codes.get("ob_codes", [])
         else:
             # Legacy format - try to convert
@@ -417,7 +417,7 @@ class RuleClassifier:
             ch_codes = [taxonomy_codes.get("ch_code", "")] if taxonomy_codes.get("ch_code") else []
             rs_codes = [taxonomy_codes.get("rs_code", "")] if taxonomy_codes.get("rs_code") else []
             ob_codes = [taxonomy_codes.get("ob_code", "")] if taxonomy_codes.get("ob_code") else []
-            ev_codes = [taxonomy_codes.get("ev_code", "")] if taxonomy_codes.get("ev_code") else []
+            lg_codes = [taxonomy_codes.get("ev_code", "")] if taxonomy_codes.get("ev_code") else []  # ev_code stores LG
             
             # UC is not available in legacy format
             uc_codes = []
@@ -428,8 +428,8 @@ class RuleClassifier:
             # Cannot satisfy cardinality - pass to LLM
             return None
         
-        # UC, DT, CH, RS, EV must have at least 1
-        if not uc_codes or not dt_codes or not ch_codes or not rs_codes or not ev_codes:
+        # UC, DT, CH, RS, LG must have at least 1
+        if not uc_codes or not dt_codes or not ch_codes or not rs_codes or not lg_codes:
             # Cannot satisfy cardinality - pass to LLM
             return None
         
@@ -453,19 +453,19 @@ class RuleClassifier:
             "dt_codes": dt_codes,
             "ch_codes": ch_codes,
             "rs_codes": rs_codes,
-            "ev_codes": ev_codes,
+            "lg_codes": lg_codes,
             "ob_codes": ob_codes,
             
             # Version
             "aimo_standard_version": self.aimo_standard_version,
             
-            # Legacy fields for backward compatibility (deprecated)
+            # Legacy fields for backward compatibility (ev_code stores first LG)
             "fs_uc_code": "DEPRECATED",
             "dt_code": dt_codes[0] if dt_codes else "",
             "ch_code": ch_codes[0] if ch_codes else "",
             "rs_code": rs_codes[0] if rs_codes else "",
             "ob_code": ob_codes[0] if ob_codes else "",
-            "ev_code": ev_codes[0] if ev_codes else "",
+            "ev_code": lg_codes[0] if lg_codes else "",
         }
         
         return classification
@@ -510,9 +510,9 @@ class RuleClassifier:
             has_dt = bool(taxonomy.get("dt_codes"))
             has_ch = bool(taxonomy.get("ch_codes"))
             has_rs = bool(taxonomy.get("rs_codes"))
-            has_ev = bool(taxonomy.get("ev_codes"))
+            has_lg = bool(taxonomy.get("lg_codes") or taxonomy.get("ev_codes"))
             
-            if has_fs and has_im and has_uc and has_dt and has_ch and has_rs and has_ev:
+            if has_fs and has_im and has_uc and has_dt and has_ch and has_rs and has_lg:
                 complete_rules.append(rule)
         
         return complete_rules
@@ -545,7 +545,7 @@ class RuleClassifier:
                     taxonomy.get("dt_codes") and
                     taxonomy.get("ch_codes") and
                     taxonomy.get("rs_codes") and
-                    taxonomy.get("ev_codes")
+                    (taxonomy.get("lg_codes") or taxonomy.get("ev_codes"))
                 )
                 if not has_all:
                     incomplete_rules.append(rule)

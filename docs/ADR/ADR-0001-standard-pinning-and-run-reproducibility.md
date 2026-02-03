@@ -30,7 +30,7 @@ AIMO Standard を Git submodule として `third_party/aimo-standard` に配置�
 
 ```
 third_party/
-└── aimo-standard/  # git submodule, fixed to v0.1.7
+└── aimo-standard/  # git submodule, fixed to v0.1.1
 ```
 
 **理由**:
@@ -43,9 +43,9 @@ third_party/
 `src/standard_adapter/pinning.py` に以下を定義:
 
 ```python
-PINNED_STANDARD_VERSION = "0.1.7"
-PINNED_STANDARD_COMMIT = "88ab75d286a252ed10aa14fe045f72304602a61f"
-PINNED_ARTIFACTS_DIR_SHA256 = "057228a570b5d6c5d0429cd5df99c14dffd266ca1001e7c075d0eed99ba2cfbc"
+PINNED_STANDARD_VERSION = "0.1.1"
+PINNED_STANDARD_COMMIT = "556fa4ddb1bcce3c5169e3d36b7697a94a80a2ff"
+PINNED_ARTIFACTS_DIR_SHA256 = "02c8f54602904174b68ba5e17b0b7c36123225a5f1c42baa197f64e866981db0"
 ```
 
 Resolver は起動時にこれらと実際の値を照合し、不一致なら例外を投げる。
@@ -62,9 +62,9 @@ Resolver は起動時にこれらと実際の値を照合し、不一致なら�
 ```json
 {
   "aimo_standard": {
-    "version": "0.1.7",
-    "commit": "88ab75d286a2...",
-    "artifacts_dir_sha256": "057228a570b5..."
+    "version": "0.1.1",
+    "commit": "556fa4ddb1bc...",
+    "artifacts_dir_sha256": "02c8f5460290..."
   }
 }
 ```

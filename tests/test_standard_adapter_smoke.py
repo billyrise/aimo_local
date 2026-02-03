@@ -2,7 +2,7 @@
 Smoke tests for AIMO Standard Adapter.
 
 These tests verify that the Standard Adapter can:
-1. Resolve Standard v0.1.7 artifacts
+1. Resolve Standard v0.1.1 artifacts
 2. Load taxonomy with all 8 dimensions
 3. Validate taxonomy code assignments
 4. Load JSON schemas from Standard
@@ -20,17 +20,17 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 class TestResolverSmoke:
     """Smoke tests for Standard resolver."""
     
-    def test_resolve_standard_v017(self):
-        """Test that v0.1.7 can be resolved successfully."""
+    def test_resolve_standard_v011(self):
+        """Test that v0.1.1 can be resolved successfully."""
         from standard_adapter.resolver import resolve_standard_artifacts
         
-        artifacts = resolve_standard_artifacts(version="0.1.7")
+        artifacts = resolve_standard_artifacts(version="0.1.1")
         
         assert artifacts is not None
-        assert artifacts.standard_version == "0.1.7"
+        assert artifacts.standard_version == "0.1.1"
         assert artifacts.standard_commit is not None
         assert len(artifacts.standard_commit) == 40  # Full SHA-1 hash
-        assert artifacts.standard_tag == "v0.1.7"
+        assert artifacts.standard_tag in ("v0.1.1", "0.1.1")
         assert artifacts.artifacts_dir.exists()
         assert artifacts.artifacts_dir_sha256 is not None
         assert len(artifacts.artifacts_dir_sha256) == 64  # SHA-256 hex
@@ -39,7 +39,7 @@ class TestResolverSmoke:
         """Test that ResolvedStandardArtifacts can be serialized."""
         from standard_adapter.resolver import resolve_standard_artifacts
         
-        artifacts = resolve_standard_artifacts(version="0.1.7")
+        artifacts = resolve_standard_artifacts(version="0.1.1")
         data = artifacts.to_dict()
         
         assert isinstance(data, dict)
@@ -55,17 +55,17 @@ class TestTaxonomySmoke:
         """Test that taxonomy loads without errors."""
         from standard_adapter.taxonomy import TaxonomyAdapter
         
-        adapter = TaxonomyAdapter(version="0.1.7")
+        adapter = TaxonomyAdapter(version="0.1.1")
         
         assert adapter is not None
-        assert adapter.standard_version == "0.1.7"
+        assert adapter.standard_version == "0.1.1"
         assert adapter.total_codes > 0
     
     def test_all_dimensions_have_codes(self):
         """Test that all 8 dimensions have codes (none empty)."""
         from standard_adapter.taxonomy import TaxonomyAdapter, ALL_DIMENSIONS
         
-        adapter = TaxonomyAdapter(version="0.1.7")
+        adapter = TaxonomyAdapter(version="0.1.1")
         
         for dim in ALL_DIMENSIONS:
             codes = adapter.get_allowed_codes(dim)
@@ -75,7 +75,7 @@ class TestTaxonomySmoke:
         """Test FS (Functional Scope) dimension has codes."""
         from standard_adapter.taxonomy import get_allowed_codes
         
-        codes = get_allowed_codes("FS", version="0.1.7")
+        codes = get_allowed_codes("FS", version="0.1.1")
         
         assert len(codes) > 0
         assert all(c.startswith("FS-") for c in codes)
@@ -84,7 +84,7 @@ class TestTaxonomySmoke:
         """Test IM (Integration Mode) dimension has codes."""
         from standard_adapter.taxonomy import get_allowed_codes
         
-        codes = get_allowed_codes("IM", version="0.1.7")
+        codes = get_allowed_codes("IM", version="0.1.1")
         
         assert len(codes) > 0
         assert all(c.startswith("IM-") for c in codes)
@@ -93,7 +93,7 @@ class TestTaxonomySmoke:
         """Test UC (Use Case Class) dimension has codes."""
         from standard_adapter.taxonomy import get_allowed_codes
         
-        codes = get_allowed_codes("UC", version="0.1.7")
+        codes = get_allowed_codes("UC", version="0.1.1")
         
         assert len(codes) > 0
         assert all(c.startswith("UC-") for c in codes)
@@ -102,7 +102,7 @@ class TestTaxonomySmoke:
         """Test DT (Data Type) dimension has codes."""
         from standard_adapter.taxonomy import get_allowed_codes
         
-        codes = get_allowed_codes("DT", version="0.1.7")
+        codes = get_allowed_codes("DT", version="0.1.1")
         
         assert len(codes) > 0
         assert all(c.startswith("DT-") for c in codes)
@@ -111,7 +111,7 @@ class TestTaxonomySmoke:
         """Test CH (Channel) dimension has codes."""
         from standard_adapter.taxonomy import get_allowed_codes
         
-        codes = get_allowed_codes("CH", version="0.1.7")
+        codes = get_allowed_codes("CH", version="0.1.1")
         
         assert len(codes) > 0
         assert all(c.startswith("CH-") for c in codes)
@@ -120,7 +120,7 @@ class TestTaxonomySmoke:
         """Test RS (Risk Surface) dimension has codes."""
         from standard_adapter.taxonomy import get_allowed_codes
         
-        codes = get_allowed_codes("RS", version="0.1.7")
+        codes = get_allowed_codes("RS", version="0.1.1")
         
         assert len(codes) > 0
         assert all(c.startswith("RS-") for c in codes)
@@ -129,25 +129,25 @@ class TestTaxonomySmoke:
         """Test OB (Outcome / Benefit) dimension has codes."""
         from standard_adapter.taxonomy import get_allowed_codes
         
-        codes = get_allowed_codes("OB", version="0.1.7")
+        codes = get_allowed_codes("OB", version="0.1.1")
         
         assert len(codes) > 0
         assert all(c.startswith("OB-") for c in codes)
     
-    def test_ev_dimension_has_codes(self):
-        """Test EV (Evidence Type) dimension has codes."""
+    def test_lg_dimension_has_codes(self):
+        """Test LG (Log/Event Type) dimension has codes."""
         from standard_adapter.taxonomy import get_allowed_codes
         
-        codes = get_allowed_codes("EV", version="0.1.7")
+        codes = get_allowed_codes("LG", version="0.1.1")
         
         assert len(codes) > 0
-        assert all(c.startswith("EV-") for c in codes)
+        assert all(c.startswith("LG-") for c in codes)
     
     def test_taxonomy_stats(self):
         """Test taxonomy statistics."""
         from standard_adapter.taxonomy import TaxonomyAdapter
         
-        adapter = TaxonomyAdapter(version="0.1.7")
+        adapter = TaxonomyAdapter(version="0.1.1")
         stats = adapter.get_stats()
         
         assert "standard_version" in stats
@@ -170,9 +170,9 @@ class TestTaxonomyValidation:
             dt_codes=["DT-001"],
             ch_codes=["CH-001"],
             rs_codes=["RS-001"],
-            ev_codes=["EV-001"],
+            lg_codes=["LG-001"],
             ob_codes=[],  # Optional
-            version="0.1.7"
+            version="0.1.1"
         )
         
         assert len(errors) == 0, f"Unexpected errors: {errors}"
@@ -188,8 +188,8 @@ class TestTaxonomyValidation:
             dt_codes=["DT-001"],
             ch_codes=["CH-001"],
             rs_codes=["RS-001"],
-            ev_codes=["EV-001"],
-            version="0.1.7"
+            lg_codes=["LG-001"],
+            version="0.1.1"
         )
         
         assert len(errors) > 0
@@ -206,8 +206,8 @@ class TestTaxonomyValidation:
             dt_codes=["DT-001"],
             ch_codes=["CH-001"],
             rs_codes=["RS-001"],
-            ev_codes=["EV-001"],
-            version="0.1.7"
+            lg_codes=["LG-001"],
+            version="0.1.1"
         )
         
         assert len(errors) > 0
@@ -224,8 +224,8 @@ class TestTaxonomyValidation:
             dt_codes=["DT-001"],
             ch_codes=["CH-001"],
             rs_codes=["RS-001"],
-            ev_codes=["EV-001"],
-            version="0.1.7"
+            lg_codes=["LG-001"],
+            version="0.1.1"
         )
         
         assert len(errors) > 0
@@ -239,16 +239,16 @@ class TestSchemasSmoke:
         """Test that schema loader initializes without errors."""
         from standard_adapter.schemas import SchemaLoader
         
-        loader = SchemaLoader(version="0.1.7")
+        loader = SchemaLoader(version="0.1.1")
         
         assert loader is not None
-        assert loader.standard_version == "0.1.7"
+        assert loader.standard_version == "0.1.1"
     
     def test_list_available_schemas(self):
         """Test listing available schemas."""
         from standard_adapter.schemas import SchemaLoader
         
-        loader = SchemaLoader(version="0.1.7")
+        loader = SchemaLoader(version="0.1.1")
         schemas = loader.list_available_schemas()
         
         assert isinstance(schemas, list)
@@ -259,7 +259,7 @@ class TestSchemasSmoke:
         """Test loading Evidence Pack manifest schema."""
         from standard_adapter.schemas import SchemaLoader
         
-        loader = SchemaLoader(version="0.1.7")
+        loader = SchemaLoader(version="0.1.1")
         schema = loader.get_evidence_pack_manifest_schema()
         
         # Schema may be None if not available in cache
@@ -275,16 +275,16 @@ class TestValidatorRunnerSmoke:
         """Test that validator runner initializes without errors."""
         from standard_adapter.validator_runner import ValidatorRunner
         
-        runner = ValidatorRunner(version="0.1.7")
+        runner = ValidatorRunner(version="0.1.1")
         
         assert runner is not None
-        assert runner.artifacts.standard_version == "0.1.7"
+        assert runner.artifacts.standard_version == "0.1.1"
     
     def test_validate_codes_only(self):
-        """Test validating codes only."""
+        """Test validating codes only (Standard 0.1.1: LG)."""
         from standard_adapter.validator_runner import ValidatorRunner
         
-        runner = ValidatorRunner(version="0.1.7")
+        runner = ValidatorRunner(version="0.1.1")
         
         result = runner.validate_codes_only({
             "FS": ["FS-001"],
@@ -293,12 +293,12 @@ class TestValidatorRunnerSmoke:
             "DT": ["DT-001"],
             "CH": ["CH-001"],
             "RS": ["RS-001"],
-            "EV": ["EV-001"],
+            "LG": ["LG-001"],
         })
         
         assert result.passed is True
         assert len(result.errors) == 0
-        assert result.standard_version == "0.1.7"
+        assert result.standard_version == "0.1.1"
         assert result.validator_used == "fallback"
 
 
@@ -309,14 +309,14 @@ class TestModuleLevelFunctions:
         """Test get_taxonomy_adapter function."""
         from standard_adapter import get_taxonomy_adapter
         
-        adapter = get_taxonomy_adapter("0.1.7")
+        adapter = get_taxonomy_adapter("0.1.1")
         assert adapter is not None
     
     def test_get_allowed_codes_function(self):
         """Test get_allowed_codes module-level function."""
         from standard_adapter import get_allowed_codes
         
-        codes = get_allowed_codes("FS", version="0.1.7")
+        codes = get_allowed_codes("FS", version="0.1.1")
         assert len(codes) > 0
     
     def test_validate_assignment_function(self):
@@ -330,8 +330,8 @@ class TestModuleLevelFunctions:
             dt_codes=["DT-001"],
             ch_codes=["CH-001"],
             rs_codes=["RS-001"],
-            ev_codes=["EV-001"],
-            version="0.1.7"
+            lg_codes=["LG-001"],
+            version="0.1.1"
         )
         
         assert len(errors) == 0

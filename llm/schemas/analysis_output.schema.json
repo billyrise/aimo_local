@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.local/schemas/llm/analysis_output.schema.json",
   "title": "AIMO LLM Service Analysis Output",
-  "description": "Schema for LLM-generated service classification results (AIMO Standard v0.1.7+ taxonomy)",
+  "description": "Schema for LLM-generated service classification results (AIMO Standard v0.1.1+ taxonomy)",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -18,7 +18,7 @@
     "dt_codes",
     "ch_codes",
     "rs_codes",
-    "ev_codes",
+    "lg_codes",
     "ob_codes",
     "aimo_standard_version"
   ],
@@ -102,14 +102,14 @@
       "minItems": 1,
       "description": "Risk Surface codes (1+ required). Format: RS-NNN"
     },
-    "ev_codes": {
+    "lg_codes": {
       "type": "array",
       "items": {
         "type": "string",
-        "pattern": "^EV-\\d{3}$"
+        "pattern": "^LG-\\d{3}$"
       },
       "minItems": 1,
-      "description": "Evidence Type codes (1+ required). Format: EV-NNN"
+      "description": "Log/Event Type codes (1+ required). Format: LG-NNN"
     },
     "ob_codes": {
       "type": "array",
@@ -122,7 +122,7 @@
     },
     "aimo_standard_version": {
       "type": "string",
-      "description": "AIMO Standard version used for classification (e.g., '0.1.7')",
+      "description": "AIMO Standard version used for classification (e.g., '0.1.1')",
       "minLength": 1,
       "maxLength": 20
     },

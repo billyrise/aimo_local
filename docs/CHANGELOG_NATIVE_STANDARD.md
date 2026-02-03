@@ -1,8 +1,22 @@
-# CHANGELOG: Native AIMO Standard v0.1.7 Integration
+# CHANGELOG: Native AIMO Standard Integration
 
 **開始日**: 2026-02-02  
-**ブランチ**: `feat/native-standard-v0.1.7`  
-**目的**: AIMO Standard v0.1.7（英語版）を唯一の正として、Analysis Engineの出力・DB・キャッシュ・Evidenceを無矛盾化する
+**目的**: AIMO Standard（英語版）を唯一の正として、Analysis Engineの出力・DB・キャッシュ・Evidenceを無矛盾化する
+
+---
+
+## 2026-02-04 — Standard 0.1.1 準拠（Phase 3–4 完了）
+
+- **バージョン・ピン**: デフォルトおよびピン値を v0.1.1 に更新（billyrise/aimo-standard v0.1.1 タグ・artifacts に合わせる）
+- **Taxonomy**: 8番目の次元を EV（Evidence Type）から **LG（Log/Event Type, LG-001..LG-015）** に統一。EV は Evidence アーティファクト ID（EP-01..EP-07）専用に
+- **Evidence Bundle ルート構造 (v0.1)**: ルートに manifest.json、objects/、payloads/、signatures/、hashes/ を生成。Validator はルート manifest を前提に検証
+- **Evidence Pack**: file_id を EP-01..EP-07、ev_type を LG コードに統一。dictionary.json / summary.json / change_log.json を payloads に含める
+- **ドキュメント**: DEVELOPER_HANDOFF、PLAYBOOK、MIGRATION、ADR を 0.1.1 と LG・ルート構造に更新
+- **テスト**: 契約 E2E・バンドル生成・Validator PASS を v0.1.1 で検証済み
+
+---
+
+## 2026-02-02 — 初回 Native Standard 統合（v0.1.7 ベース）
 
 ---
 
@@ -10,7 +24,7 @@
 
 ### 1.1 Standard固定による再現性・監査耐性
 
-- AIMO Standard v0.1.7（英語版）を**唯一の正**として採用
+- AIMO Standard（英語版、現行 v0.1.1）を**唯一の正**として採用
 - `/latest` を正として扱わない（バージョン固定方式）
 - Runごとに参照Standardを `runs` テーブルに記録し、再現性と監査耐性を維持
 - Standard成果物は submodule + 展開キャッシュで管理（巨大バイナリはリポジトリにコミットしない）
@@ -174,4 +188,4 @@
 
 ---
 
-**最終更新**: 2026-02-02
+**最終更新**: 2026-02-04

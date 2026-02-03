@@ -1,7 +1,7 @@
 """
 Tests for RuleClassifier 8-dimension taxonomy output.
 
-AIMO Standard v0.1.7+ taxonomy:
+AIMO Standard v0.1.1 taxonomy (8 dimensions including LG):
 - 8 dimensions: FS, UC, DT, CH, IM, RS, OB, EV
 - Cardinality:
   - FS: Exactly 1 (string)
@@ -83,7 +83,7 @@ class TestRuleClassifierOutput:
             assert "dt_codes" in result
             assert "ch_codes" in result
             assert "rs_codes" in result
-            assert "ev_codes" in result
+            assert "lg_codes" in result
             assert "ob_codes" in result
             assert "aimo_standard_version" in result
             
@@ -94,7 +94,7 @@ class TestRuleClassifierOutput:
             assert isinstance(result["dt_codes"], list)
             assert isinstance(result["ch_codes"], list)
             assert isinstance(result["rs_codes"], list)
-            assert isinstance(result["ev_codes"], list)
+            assert isinstance(result["lg_codes"], list)
             assert isinstance(result["ob_codes"], list)
 
 
@@ -202,7 +202,7 @@ class TestIncompleteRules:
                 # Only partial taxonomy - missing uc_codes, etc.
                 "fs_code": "FS-001",
                 "im_code": "IM-001"
-                # Missing: uc_codes, dt_codes, ch_codes, rs_codes, ev_codes
+                # Missing: uc_codes, dt_codes, ch_codes, rs_codes, lg_codes
             }
         }
         
@@ -393,9 +393,9 @@ class TestDbRecordConversion:
             "dt_codes": ["DT-001"],
             "ch_codes": ["CH-001"],
             "rs_codes": ["RS-001"],
-            "ev_codes": ["EV-001"],
+            "lg_codes": ["LG-001"],
             "ob_codes": [],
-            "aimo_standard_version": "0.1.7"
+            "aimo_standard_version": "0.1.1"
         }
         
         db_record = classification_to_db_record(classification)
@@ -426,7 +426,7 @@ class TestDbRecordConversion:
             "dt_codes": ["DT-001"],
             "ch_codes": ["CH-001"],
             "rs_codes": ["RS-001"],
-            "ev_codes": ["EV-001"],
+            "lg_codes": ["LG-001"],
             "ob_codes": []
         }
         
@@ -444,7 +444,7 @@ class TestDbRecordConversion:
             "dt_codes": ["DT-001"],
             "ch_codes": ["CH-001"],
             "rs_codes": ["RS-001"],
-            "ev_codes": ["EV-001"],
+            "lg_codes": ["LG-001"],
             "ob_codes": []
         }
         

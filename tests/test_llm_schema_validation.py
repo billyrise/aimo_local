@@ -1,7 +1,7 @@
 """
 Tests for LLM output schema validation (8-dimension taxonomy).
 
-AIMO Standard v0.1.7+ taxonomy:
+AIMO Standard v0.1.1 taxonomy (8 dimensions including LG):
 - 8 dimensions: FS, UC, DT, CH, IM, RS, OB, EV
 - Cardinality:
   - FS: Exactly 1 (string)
@@ -63,7 +63,7 @@ class TestSchemaStructure:
         assert "dt_codes" in required
         assert "ch_codes" in required
         assert "rs_codes" in required
-        assert "ev_codes" in required
+        assert "lg_codes" in required
         assert "ob_codes" in required
         assert "aimo_standard_version" in required
     
@@ -103,9 +103,9 @@ class TestValidOutputs:
             "dt_codes": ["DT-001", "DT-002"],
             "ch_codes": ["CH-001"],
             "rs_codes": ["RS-001", "RS-002"],
-            "ev_codes": ["EV-001"],
+            "lg_codes": ["LG-001"],
             "ob_codes": [],
-            "aimo_standard_version": "0.1.7"
+            "aimo_standard_version": "0.1.1"
         }
         
         # Should not raise
@@ -126,9 +126,9 @@ class TestValidOutputs:
             "dt_codes": ["DT-001"],
             "ch_codes": ["CH-002"],
             "rs_codes": ["RS-003"],
-            "ev_codes": ["EV-002"],
+            "lg_codes": ["LG-002"],
             "ob_codes": ["OB-001", "OB-002"],
-            "aimo_standard_version": "0.1.7"
+            "aimo_standard_version": "0.1.1"
         }
         
         validator.validate(output)
@@ -148,9 +148,9 @@ class TestValidOutputs:
             "dt_codes": ["DT-099"],
             "ch_codes": ["CH-099"],
             "rs_codes": ["RS-099"],
-            "ev_codes": ["EV-099"],
+            "lg_codes": ["LG-099"],
             "ob_codes": [],
-            "aimo_standard_version": "0.1.7"
+            "aimo_standard_version": "0.1.1"
         }
         
         validator.validate(output)
@@ -170,9 +170,9 @@ class TestValidOutputs:
             "dt_codes": ["DT-002"],
             "ch_codes": ["CH-001"],
             "rs_codes": ["RS-002"],
-            "ev_codes": ["EV-001"],
+            "lg_codes": ["LG-001"],
             "ob_codes": [],
-            "aimo_standard_version": "0.1.7",
+            "aimo_standard_version": "0.1.1",
             "suggested_domains": ["example.com", "api.example.com"],
             "is_ai_service": False
         }
@@ -210,9 +210,9 @@ class TestInvalidOutputs:
             "dt_codes": ["DT-001"],
             "ch_codes": ["CH-001"],
             "rs_codes": ["RS-001"],
-            "ev_codes": ["EV-001"],
+            "lg_codes": ["LG-001"],
             "ob_codes": [],
-            "aimo_standard_version": "0.1.7"
+            "aimo_standard_version": "0.1.1"
         }
         
         with pytest.raises(jsonschema.ValidationError):
@@ -233,9 +233,9 @@ class TestInvalidOutputs:
             "dt_codes": ["DT-001"],
             "ch_codes": ["CH-001"],
             "rs_codes": ["RS-001"],
-            "ev_codes": ["EV-001"],
+            "lg_codes": ["LG-001"],
             "ob_codes": [],
-            "aimo_standard_version": "0.1.7"
+            "aimo_standard_version": "0.1.1"
         }
         
         with pytest.raises(jsonschema.ValidationError):
@@ -256,9 +256,9 @@ class TestInvalidOutputs:
             "dt_codes": ["DT-001"],
             "ch_codes": ["CH-001"],
             "rs_codes": ["RS-001"],
-            "ev_codes": ["EV-001"],
+            "lg_codes": ["LG-001"],
             "ob_codes": [],
-            "aimo_standard_version": "0.1.7"
+            "aimo_standard_version": "0.1.1"
         }
         
         with pytest.raises(jsonschema.ValidationError):
@@ -279,9 +279,9 @@ class TestInvalidOutputs:
             "dt_codes": ["DT-001"],
             "ch_codes": ["CH-001"],
             "rs_codes": ["RS-001"],
-            "ev_codes": ["EV-001"],
+            "lg_codes": ["LG-001"],
             "ob_codes": [],
-            "aimo_standard_version": "0.1.7",
+            "aimo_standard_version": "0.1.1",
             "extra_field": "should be rejected"  # Not allowed
         }
         
@@ -303,9 +303,9 @@ class TestInvalidOutputs:
             "dt_codes": ["DT-001"],
             "ch_codes": ["CH-001"],
             "rs_codes": ["RS-001"],
-            "ev_codes": ["EV-001"],
+            "lg_codes": ["LG-001"],
             "ob_codes": [],
-            "aimo_standard_version": "0.1.7",
+            "aimo_standard_version": "0.1.1",
             "fs_uc_code": "FS-UC-001"  # Legacy field - should be rejected
         }
         
@@ -331,9 +331,9 @@ class TestCardinalityValidation:
             "dt_codes": ["DT-001"],
             "ch_codes": ["CH-001"],
             "rs_codes": ["RS-001"],
-            "ev_codes": ["EV-001"],
+            "lg_codes": ["LG-001"],
             "ob_codes": [],
-            "aimo_standard_version": "0.1.7"
+            "aimo_standard_version": "0.1.1"
         }
         
         with pytest.raises(jsonschema.ValidationError):
@@ -354,9 +354,9 @@ class TestCardinalityValidation:
             "dt_codes": [],  # Should have at least 1
             "ch_codes": ["CH-001"],
             "rs_codes": ["RS-001"],
-            "ev_codes": ["EV-001"],
+            "lg_codes": ["LG-001"],
             "ob_codes": [],
-            "aimo_standard_version": "0.1.7"
+            "aimo_standard_version": "0.1.1"
         }
         
         with pytest.raises(jsonschema.ValidationError):
@@ -377,9 +377,9 @@ class TestCardinalityValidation:
             "dt_codes": ["DT-001"],
             "ch_codes": ["CH-001"],
             "rs_codes": ["RS-001"],
-            "ev_codes": ["EV-001"],
+            "lg_codes": ["LG-001"],
             "ob_codes": [],  # Should be allowed (optional)
-            "aimo_standard_version": "0.1.7"
+            "aimo_standard_version": "0.1.1"
         }
         
         # Should not raise
@@ -400,9 +400,9 @@ class TestCardinalityValidation:
             "dt_codes": ["DT-001"],
             "ch_codes": ["CH-001"],
             "rs_codes": ["RS-001"],
-            "ev_codes": ["EV-001"],
+            "lg_codes": ["LG-001"],
             "ob_codes": [],
-            "aimo_standard_version": "0.1.7"
+            "aimo_standard_version": "0.1.1"
         }
         
         validator.validate(output)
@@ -426,9 +426,9 @@ class TestPatternValidation:
             "dt_codes": ["DT-001"],
             "ch_codes": ["CH-001"],
             "rs_codes": ["RS-001"],
-            "ev_codes": ["EV-001"],
+            "lg_codes": ["LG-001"],
             "ob_codes": [],
-            "aimo_standard_version": "0.1.7"
+            "aimo_standard_version": "0.1.1"
         }
         
         validator.validate(output)
@@ -448,9 +448,9 @@ class TestPatternValidation:
             "dt_codes": ["DT-001"],
             "ch_codes": ["CH-001"],
             "rs_codes": ["RS-001"],
-            "ev_codes": ["EV-001"],
+            "lg_codes": ["LG-001"],
             "ob_codes": [],
-            "aimo_standard_version": "0.1.7"
+            "aimo_standard_version": "0.1.1"
         }
         
         with pytest.raises(jsonschema.ValidationError):
@@ -471,9 +471,9 @@ class TestPatternValidation:
             "dt_codes": ["DT-001"],
             "ch_codes": ["CH-001"],
             "rs_codes": ["RS-001"],
-            "ev_codes": ["EV-001"],
+            "lg_codes": ["LG-001"],
             "ob_codes": [],
-            "aimo_standard_version": "0.1.7"
+            "aimo_standard_version": "0.1.1"
         }
         
         with pytest.raises(jsonschema.ValidationError):
@@ -495,9 +495,9 @@ class TestTaxonomyAdapterValidation:
                 dt_codes=["DT-001"],
                 ch_codes=["CH-001"],
                 rs_codes=["RS-001"],
-                ev_codes=["EV-001"],
+                lg_codes=["LG-001"],
                 ob_codes=[],
-                version="0.1.7"
+                version="0.1.1"
             )
             
             assert len(errors) == 0
@@ -518,9 +518,9 @@ class TestTaxonomyAdapterValidation:
                 dt_codes=["DT-001"],
                 ch_codes=["CH-001"],
                 rs_codes=["RS-001"],
-                ev_codes=["EV-001"],
+                lg_codes=["LG-001"],
                 ob_codes=[],
-                version="0.1.7"
+                version="0.1.1"
             )
             
             assert len(errors) > 0
@@ -540,9 +540,9 @@ class TestTaxonomyAdapterValidation:
                 dt_codes=["DT-001"],
                 ch_codes=["CH-001"],
                 rs_codes=["RS-001"],
-                ev_codes=["EV-001"],
+                lg_codes=["LG-001"],
                 ob_codes=[],  # Empty - should be OK
-                version="0.1.7"
+                version="0.1.1"
             )
             
             # Filter out OB-related errors

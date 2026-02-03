@@ -125,18 +125,16 @@ class ValidatorRunner:
         if self._validator_cli_path is None:
             return None
         
-        # Standard validator CLI expects a JSON file path, not a directory
-        # If directory provided, look for manifest file
+        # Standard validator CLI expects a JSON file path, not a directory.
+        # v0.1: When directory provided, use root manifest.json first (bundle root structure).
         manifest_path = target_path
         if target_path.is_dir():
-            # Try evidence_pack_manifest.json first, then manifest.json
-            for manifest_name in ["evidence_pack_manifest.json", "manifest.json"]:
+            for manifest_name in ["manifest.json", "evidence_pack_manifest.json"]:
                 candidate = target_path / manifest_name
                 if candidate.exists():
                     manifest_path = candidate
                     break
             else:
-                # No manifest found, let fallback handle it
                 return None
         
         try:
@@ -178,6 +176,83 @@ class ValidatorRunner:
             # CLI failed, return None to trigger fallback
             return None
     
+    def _validate_bundle_root_manifest(
+        self, manifest: dict, bundle_dir: Optional[Path]
+    ) -> list[str]:
+        """Validate v0.1 bundle root manifest (object_index, payload_index, hash_chain, signing)."""
+        import hashlib
+        errs = []
+        if not bundle_dir or not bundle_dir.exists():
+            errs.append("Bundle directory required to validate root manifest")
+            return errs
+        for key in ("bundle_id", "bundle_version", "created_at", "scope_ref"):
+            if key not in manifest:
+                errs.append(f"Root manifest missing required field: {key}")
+        oi = manifest.get("object_index")
+        if not isinstance(oi, list):
+            errs.append("object_index must be an array")
+        else:
+            for i, ent in enumerate(oi):
+                path = ent.get("path")
+                sha = ent.get("sha256")
+                if not path or "../" in path or path.startswith("/"):
+                    errs.append(f"object_index[{i}]: invalid path (relative, no ../)")
+                if not sha or len(sha) != 64 or not all(c in "0123456789abcdef" for c in sha):
+                    errs.append(f"object_index[{i}]: sha256 must be 64 lowercase hex")
+                if path:
+                    fp = bundle_dir / path
+                    if fp.exists():
+                        h = hashlib.sha256(fp.read_bytes()).hexdigest()
+                        if h != sha:
+                            errs.append(f"object_index[{i}]: path {path} sha256 mismatch")
+                    else:
+                        errs.append(f"object_index[{i}]: path {path} not found")
+        pi = manifest.get("payload_index")
+        if not isinstance(pi, list):
+            errs.append("payload_index must be an array")
+        else:
+            for i, ent in enumerate(pi):
+                path = ent.get("path")
+                sha = ent.get("sha256")
+                if path and ("../" in path or path.startswith("/")):
+                    errs.append(f"payload_index[{i}]: invalid path")
+                if sha and (len(sha) != 64 or not all(c in "0123456789abcdef" for c in sha)):
+                    errs.append(f"payload_index[{i}]: sha256 must be 64 lowercase hex")
+                if path:
+                    fp = bundle_dir / path
+                    if fp.exists() and sha:
+                        h = hashlib.sha256(fp.read_bytes()).hexdigest()
+                        if h != sha:
+                            errs.append(f"payload_index[{i}]: path {path} sha256 mismatch")
+        hc = manifest.get("hash_chain")
+        if not isinstance(hc, dict):
+            errs.append("hash_chain must be an object")
+        else:
+            for key in ("algorithm", "head", "path", "covers"):
+                if key not in hc:
+                    errs.append(f"hash_chain missing: {key}")
+            if "covers" in hc and isinstance(hc["covers"], list):
+                if "manifest.json" not in hc["covers"] or "objects/index.json" not in hc["covers"]:
+                    errs.append("hash_chain.covers must include manifest.json and objects/index.json")
+        sig = manifest.get("signing", {})
+        sigs = sig.get("signatures") if isinstance(sig, dict) else None
+        if not isinstance(sigs, list) or len(sigs) == 0:
+            errs.append("signing.signatures must be a non-empty array")
+        else:
+            has_manifest_target = False
+            for i, s in enumerate(sigs):
+                if not isinstance(s, dict):
+                    continue
+                targets = s.get("targets") or []
+                if "manifest.json" in targets:
+                    has_manifest_target = True
+                path = s.get("path")
+                if path and ("../" in path or path.startswith("/") or not path.startswith("signatures/")):
+                    errs.append(f"signing.signatures[{i}]: path must be under signatures/")
+            if not has_manifest_target:
+                errs.append("At least one signature must list manifest.json in targets")
+        return errs
+
     def _validate_manifest_schema(self, manifest: dict) -> list[str]:
         """Validate manifest against JSON Schema."""
         errors = []
@@ -239,6 +314,7 @@ class ValidatorRunner:
                 with open(manifest_path, "r", encoding="utf-8") as f:
                     manifest = json.load(f)
             elif evidence_bundle_dir:
+                # v0.1: Prefer root manifest.json (bundle root), then evidence_pack_manifest
                 for name in ["manifest.json", "evidence_pack_manifest.json"]:
                     path = evidence_bundle_dir / name
                     if path.exists():
@@ -259,12 +335,27 @@ class ValidatorRunner:
                 checks_performed=checks_performed
             )
         
-        # Validate manifest against schema
+        # v0.1 root bundle manifest (bundle_id, object_index, payload_index, hash_chain, signing)
+        if manifest.get("bundle_id") is not None and "object_index" in manifest:
+            checks_performed.append("bundle_root_structure")
+            root_errors = self._validate_bundle_root_manifest(manifest, evidence_bundle_dir)
+            errors.extend(root_errors)
+            return ValidationResult(
+                passed=len(errors) == 0,
+                errors=errors,
+                warnings=warnings,
+                standard_version=self.artifacts.standard_version,
+                standard_commit=self.artifacts.standard_commit,
+                standard_sha256=self.artifacts.artifacts_dir_sha256,
+                validator_used="fallback",
+                checks_performed=checks_performed
+            )
+        
+        # Evidence Pack manifest (pack_id, codes, evidence_files)
         checks_performed.append("manifest_schema_validation")
         schema_errors = self._validate_manifest_schema(manifest)
         errors.extend(schema_errors)
         
-        # Validate taxonomy codes
         if "codes" in manifest:
             checks_performed.append("taxonomy_validation")
             taxonomy_errors = self._validate_taxonomy_codes(manifest["codes"])
@@ -272,7 +363,6 @@ class ValidatorRunner:
         else:
             warnings.append("No 'codes' field in manifest, skipping taxonomy validation")
         
-        # Check evidence files exist (if bundle directory provided)
         if evidence_bundle_dir and "evidence_files" in manifest:
             checks_performed.append("evidence_files_existence")
             for ev_file in manifest["evidence_files"]:

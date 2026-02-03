@@ -5,9 +5,9 @@
 -- DuckDB supports most standard SQL with some extensions.
 -- Reference: https://duckdb.org/docs/sql/statements/create_table
 --
--- AIMO Standard Taxonomy (v0.1.7+):
--- - 8 dimensions: FS, UC, DT, CH, IM, RS, OB, EV
--- - Cardinality: FS=1, IM=1, UC/DT/CH/RS/EV=1+, OB=0+
+-- AIMO Standard Taxonomy (v0.1.1+):
+-- - 8 dimensions: FS, UC, DT, CH, IM, RS, OB, LG
+-- - Cardinality: FS=1, IM=1, UC/DT/CH/RS/LG=1+, OB=0+
 -- - Array columns stored as canonical JSON: sorted, deduplicated
 
 --------------------------------------------------------------------------------
@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS runs (
     psl_hash VARCHAR,                            -- Public Suffix List hash
     
     -- AIMO Standard versioning (required for audit reproducibility)
-    aimo_standard_version VARCHAR,               -- e.g., "0.1.7"
+    aimo_standard_version VARCHAR,               -- e.g., "0.1.1"
     aimo_standard_commit VARCHAR,                -- Full git commit hash of Standard
     aimo_standard_artifacts_dir_sha256 VARCHAR,  -- SHA256 of artifacts directory
     aimo_standard_artifacts_zip_sha256 VARCHAR,  -- SHA256 of artifacts zip (if exists)
@@ -123,9 +123,9 @@ CREATE TABLE IF NOT EXISTS analysis_cache (
     dt_codes_json VARCHAR NOT NULL DEFAULT '[]', -- DT: Data Type (1+)
     ch_codes_json VARCHAR NOT NULL DEFAULT '[]', -- CH: Channel (1+)
     rs_codes_json VARCHAR NOT NULL DEFAULT '[]', -- RS: Risk Surface (1+)
-    ev_codes_json VARCHAR NOT NULL DEFAULT '[]', -- EV: Evidence Type (1+)
+    ev_codes_json VARCHAR NOT NULL DEFAULT '[]', -- LG: Log/Event Type (1+), column name kept for compatibility
     ob_codes_json VARCHAR NOT NULL DEFAULT '[]', -- OB: Outcome/Benefit (0+, optional)
-    taxonomy_schema_version VARCHAR,             -- AIMO Standard version used (e.g., "0.1.7")
+    taxonomy_schema_version VARCHAR,             -- AIMO Standard version used (e.g., "0.1.1")
     
     -- Legacy taxonomy columns (deprecated, kept for backward compatibility)
     fs_uc_code VARCHAR,                          -- DEPRECATED: Use fs_code
@@ -133,7 +133,7 @@ CREATE TABLE IF NOT EXISTS analysis_cache (
     ch_code VARCHAR,                             -- DEPRECATED: Use ch_codes_json
     rs_code VARCHAR,                             -- DEPRECATED: Use rs_codes_json
     ob_code VARCHAR,                             -- DEPRECATED: Use ob_codes_json
-    ev_code VARCHAR,                             -- DEPRECATED: Use ev_codes_json
+    ev_code VARCHAR,                             -- DEPRECATED: Use ev_codes_json (stores first LG code)
     
     -- Status tracking
     status VARCHAR DEFAULT 'active',             -- active/needs_review/skipped/failed_permanent
@@ -200,9 +200,9 @@ CREATE TABLE IF NOT EXISTS signature_stats (
     dt_codes_json VARCHAR NOT NULL DEFAULT '[]', -- DT: Data Type (1+)
     ch_codes_json VARCHAR NOT NULL DEFAULT '[]', -- CH: Channel (1+)
     rs_codes_json VARCHAR NOT NULL DEFAULT '[]', -- RS: Risk Surface (1+)
-    ev_codes_json VARCHAR NOT NULL DEFAULT '[]', -- EV: Evidence Type (1+)
+    ev_codes_json VARCHAR NOT NULL DEFAULT '[]', -- LG: Log/Event Type (1+), column name kept for compatibility
     ob_codes_json VARCHAR NOT NULL DEFAULT '[]', -- OB: Outcome/Benefit (0+, optional)
-    taxonomy_schema_version VARCHAR,             -- AIMO Standard version used (e.g., "0.1.7")
+    taxonomy_schema_version VARCHAR,             -- AIMO Standard version used (e.g., "0.1.1")
     
     -- Legacy taxonomy columns (deprecated, kept for backward compatibility)
     fs_uc_code VARCHAR,                          -- DEPRECATED: Use fs_code
@@ -210,7 +210,7 @@ CREATE TABLE IF NOT EXISTS signature_stats (
     ch_code VARCHAR,                             -- DEPRECATED: Use ch_codes_json
     rs_code VARCHAR,                             -- DEPRECATED: Use rs_codes_json
     ob_code VARCHAR,                             -- DEPRECATED: Use ob_codes_json
-    ev_code VARCHAR,                             -- DEPRECATED: Use ev_codes_json
+    ev_code VARCHAR,                             -- DEPRECATED: Use ev_codes_json (stores first LG code)
     taxonomy_version VARCHAR,                    -- DEPRECATED: Use taxonomy_schema_version
     
     -- Time range

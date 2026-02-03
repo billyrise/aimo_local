@@ -67,12 +67,22 @@ run_key = sha256(
 ```json
 {
   "aimo_standard": {
-    "version": "0.1.7",
-    "commit": "88ab75d286a2...",
-    "artifacts_dir_sha256": "057228a570b5..."
+    "version": "0.1.1",
+    "commit": "556fa4ddb1bc...",
+    "artifacts_dir_sha256": "02c8f5460290..."
   }
 }
 ```
+
+### Evidence Bundle ルート構造 (v0.1)
+
+Standard 0.1.1 ではバンドルルートに以下が必須:
+
+- **manifest.json** — バンドルマニフェスト（bundle_id, object_index, payload_index, hash_chain, signing）
+- **objects/** — 列挙オブジェクト（例: index.json）
+- **payloads/** — ペイロード（run_manifest, evidence_pack_manifest, logs/, analysis/, dictionary.json, summary.json, change_log.json 等）
+- **signatures/** — 少なくとも1件が manifest.json を参照
+- **hashes/** — ハッシュチェーン（manifest.json, objects/index.json をカバー）
 
 ### Sample Seed
 
@@ -93,7 +103,7 @@ resolve_standard_artifacts("latest")
 ### ❌ Pin 無視
 ```python
 # これは禁止
-resolve_standard_artifacts("0.1.7", skip_pinning_check=True)
+resolve_standard_artifacts("0.1.1", skip_pinning_check=True)
 ```
 `skip_pinning_check=True` は upgrade script 以外で使用禁止。
 
@@ -108,7 +118,7 @@ fail したら必ず `status="failed"` を返す。
 ### ❌ 旧タグ改変
 ```bash
 # Standard repo でこれは禁止
-git tag -f v0.1.7 new-commit
+git tag -f v0.1.1 new-commit
 ```
 タグは不変。改変が発覚したら報告。
 
@@ -121,7 +131,7 @@ git tag -f v0.1.7 new-commit
 git checkout -b feat/your-feature
 
 # 2. Standard 同期 (pin 検証付き)
-python scripts/sync_aimo_standard.py --version 0.1.7
+python scripts/sync_aimo_standard.py --version 0.1.1
 
 # 3. テスト実行
 pytest -q
@@ -212,5 +222,5 @@ git commit -m "chore: remove accidentally tracked files"
 
 ---
 
-**最終更新**: 2026-02-02
-**対象 Standard Version**: v0.1.7
+**最終更新**: 2026-02-04
+**対象 Standard Version**: v0.1.1

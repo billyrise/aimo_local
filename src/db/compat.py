@@ -1,14 +1,14 @@
 """
-Database Compatibility Layer for AIMO Standard v0.1.7 Migration
+Database Compatibility Layer for AIMO Standard 0.1.1 (EV→LG)
 
 Provides backward-compatible reading of DB records that may contain:
-- New 8-dimension format (uc_codes_json, dt_codes_json, etc.)
-- Legacy 7-code format (fs_uc_code, dt_code, etc.)
-- Mixed format during migration
+- New 8-dimension format (uc_codes_json, dt_codes_json, ev_codes_json = LG, etc.)
+- Legacy 7-code format (fs_uc_code, dt_code, ev_code, etc.)
+- ev_codes_json/ev_code store LG codes (Log/Event Type); exposed as record.lg_codes
 
 Priority for reading:
 1. New columns (uc_codes_json, etc.) if non-empty
-2. Fall back to legacy columns (dt_code, etc.) as single-element array
+2. Fall back to legacy columns (ev_code, etc.) as single-element array
 3. Mark records with legacy-only data as needs_review=True
 
 Usage:
@@ -17,7 +17,7 @@ Usage:
     # Normalize a DB row dict
     record = normalize_taxonomy_record(row_dict)
     print(record.fs_code)       # Single value
-    print(record.uc_codes)      # List
+    print(record.lg_codes)      # List (from ev_codes_json/ev_code)
     print(record.needs_review)  # True if legacy fallback used
 """
 
@@ -42,7 +42,7 @@ class TaxonomyRecord:
         dt_codes: Data Type codes (1+)
         ch_codes: Channel codes (1+)
         rs_codes: Risk Surface codes (1+)
-        ev_codes: Evidence Type codes (1+)
+        lg_codes: Log/Event Type codes (1+); DB column ev_codes_json/ev_code
         ob_codes: Outcome/Benefit codes (0+, optional)
         taxonomy_version: AIMO Standard version
         needs_review: True if record used legacy fallback or is incomplete
@@ -54,14 +54,14 @@ class TaxonomyRecord:
     dt_codes: List[str] = field(default_factory=list)
     ch_codes: List[str] = field(default_factory=list)
     rs_codes: List[str] = field(default_factory=list)
-    ev_codes: List[str] = field(default_factory=list)
+    lg_codes: List[str] = field(default_factory=list)
     ob_codes: List[str] = field(default_factory=list)
-    taxonomy_version: str = "0.1.7"
+    taxonomy_version: str = "0.1.1"
     needs_review: bool = False
     source_format: str = "new"
     
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary format for bundle generation."""
+        """Convert to dictionary format for bundle generation (Standard 0.1.1: LG)."""
         return {
             "FS": [self.fs_code] if self.fs_code else [],
             "IM": [self.im_code] if self.im_code else [],
@@ -69,7 +69,7 @@ class TaxonomyRecord:
             "DT": self.dt_codes,
             "CH": self.ch_codes,
             "RS": self.rs_codes,
-            "EV": self.ev_codes,
+            "LG": self.lg_codes,
             "OB": self.ob_codes,
         }
     
@@ -82,14 +82,14 @@ class TaxonomyRecord:
             "dt_codes": self.dt_codes,
             "ch_codes": self.ch_codes,
             "rs_codes": self.rs_codes,
-            "ev_codes": self.ev_codes,
+            "lg_codes": self.lg_codes,
             "ob_codes": self.ob_codes,
             "taxonomy_version": self.taxonomy_version,
             "needs_review": self.needs_review,
         }
     
     def is_complete(self) -> bool:
-        """Check if all required dimensions have at least one code."""
+        """Check if all required dimensions have at least one code (Standard 0.1.1: LG)."""
         return (
             bool(self.fs_code) and
             bool(self.im_code) and
@@ -97,14 +97,14 @@ class TaxonomyRecord:
             len(self.dt_codes) >= 1 and
             len(self.ch_codes) >= 1 and
             len(self.rs_codes) >= 1 and
-            len(self.ev_codes) >= 1
+            len(self.lg_codes) >= 1
             # OB is optional (0+)
         )
 
 
 def normalize_taxonomy_record(
     row: Dict[str, Any],
-    default_version: str = "0.1.7"
+    default_version: str = "0.1.1"
 ) -> TaxonomyRecord:
     """
     Normalize a DB row to TaxonomyRecord with consistent 8-dimension format.
@@ -186,9 +186,9 @@ def normalize_taxonomy_record(
         used_legacy = True
         source_format = "legacy"
     
-    # EV codes (1+)
-    ev_codes, ev_from_legacy = _normalize_array_column_with_source(row, "ev_codes_json", "ev_code")
-    if ev_from_legacy:
+    # LG codes (1+) — DB columns still ev_codes_json/ev_code (Standard 0.1.1)
+    lg_codes, lg_from_legacy = _normalize_array_column_with_source(row, "ev_codes_json", "ev_code")
+    if lg_from_legacy:
         used_legacy = True
         source_format = "legacy"
     
@@ -212,11 +212,11 @@ def normalize_taxonomy_record(
         dt_codes=dt_codes,
         ch_codes=ch_codes,
         rs_codes=rs_codes,
-        ev_codes=ev_codes,
+        lg_codes=lg_codes,
         ob_codes=ob_codes,
         taxonomy_version=version,
         needs_review=used_legacy or not _check_completeness(
-            fs_code, im_code, uc_codes, dt_codes, ch_codes, rs_codes, ev_codes
+            fs_code, im_code, uc_codes, dt_codes, ch_codes, rs_codes, lg_codes
         ),
         source_format=source_format
     )
@@ -284,9 +284,9 @@ def _check_completeness(
     dt_codes: List[str],
     ch_codes: List[str],
     rs_codes: List[str],
-    ev_codes: List[str]
+    lg_codes: List[str]
 ) -> bool:
-    """Check if all required dimensions have at least one code."""
+    """Check if all required dimensions have at least one code (Standard 0.1.1: LG)."""
     return (
         bool(fs_code) and
         bool(im_code) and
@@ -294,13 +294,13 @@ def _check_completeness(
         len(dt_codes) >= 1 and
         len(ch_codes) >= 1 and
         len(rs_codes) >= 1 and
-        len(ev_codes) >= 1
+        len(lg_codes) >= 1
     )
 
 
 def normalize_db_rows(
     rows: List[Dict[str, Any]],
-    default_version: str = "0.1.7"
+    default_version: str = "0.1.1"
 ) -> List[TaxonomyRecord]:
     """
     Normalize a list of DB rows.
@@ -334,7 +334,7 @@ def record_to_bundle_format(record: TaxonomyRecord) -> Dict[str, Any]:
         "dt_codes": record.dt_codes,
         "ch_codes": record.ch_codes,
         "rs_codes": record.rs_codes,
-        "ev_codes": record.ev_codes,
+        "lg_codes": record.lg_codes,
         "ob_codes": record.ob_codes,
         "taxonomy_version": record.taxonomy_version,
         "_needs_review": record.needs_review,
@@ -362,7 +362,7 @@ def export_legacy_format(record: TaxonomyRecord) -> Dict[str, str]:
         "ch_code": record.ch_codes[0] if record.ch_codes else "",
         "rs_code": record.rs_codes[0] if record.rs_codes else "",
         "ob_code": record.ob_codes[0] if record.ob_codes else "",
-        "ev_code": record.ev_codes[0] if record.ev_codes else "",
+        "ev_code": record.lg_codes[0] if record.lg_codes else "",  # LG stored in ev_code column
         "taxonomy_version": record.taxonomy_version,
     }
 
@@ -424,7 +424,7 @@ def get_migration_status(row: Dict[str, Any]) -> Dict[str, Any]:
     if not has_new_rs and not has_legacy_rs:
         missing.append("RS")
     if not has_new_ev and not has_legacy_ev:
-        missing.append("EV")
+        missing.append("LG")
     
     needs_migration = has_legacy_only or len(missing) > 0
     

@@ -140,4 +140,4 @@ AIMO_DISABLE_LLM=1 AIMO_CLASSIFIER=stub pytest tests/test_contract_e2e_standard_
 ---
 
 **最終更新**: 2026-02-02
-**適用 Standard Version**: v0.1.7
+**適用 Standard Version**: v0.1.1

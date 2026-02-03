@@ -6,21 +6,21 @@ All prompts are designed to:
 1. Minimize hallucination (explicit "unknown" handling)
 2. Enforce strict JSON output with 8-dimension taxonomy
 3. Focus on enterprise security context
-4. Use AIMO Standard v0.1.7+ taxonomy codes
+4. Use AIMO Standard v0.1.1+ taxonomy codes
 
-Taxonomy Dimensions (AIMO Standard v0.1.7):
+Taxonomy Dimensions (AIMO Standard 0.1.1):
 - FS: Functional Scope (exactly 1)
 - IM: Integration Mode (exactly 1)
 - UC: Use Case Class (1+)
 - DT: Data Type (1+)
 - CH: Channel (1+)
 - RS: Risk Surface (1+)
-- EV: Evidence Type (1+)
+- LG: Log/Event Type (1+)
 - OB: Outcome/Benefit (0+, optional)
 """
 
 # Default AIMO Standard version
-DEFAULT_AIMO_STANDARD_VERSION = "0.1.7"
+DEFAULT_AIMO_STANDARD_VERSION = "0.1.1"
 
 # System prompt for service classification
 SERVICE_ANALYSIS_SYSTEM = """You are an enterprise security analyst specializing in SaaS and web service classification.
@@ -64,7 +64,7 @@ SERVICE_ANALYSIS_USER = """Analyze the following URL signatures and classify eac
 - dt_codes: AT LEAST 1 code required (array)
 - ch_codes: AT LEAST 1 code required (array)
 - rs_codes: AT LEAST 1 code required (array)
-- ev_codes: AT LEAST 1 code required (array)
+- lg_codes: AT LEAST 1 code required (array)
 - ob_codes: 0 or more codes allowed (array, can be empty)
 
 ## Output Schema (strict JSON, no extra keys)
@@ -76,15 +76,15 @@ SERVICE_ANALYSIS_USER = """Analyze the following URL signatures and classify eac
 ## Output Format
 Return a JSON array with one object per input signature. Example:
 [
-  {{"service_name": "ChatGPT / OpenAI", "usage_type": "genai", "risk_level": "high", "category": "GenAI", "confidence": 0.95, "rationale_short": "OpenAI's ChatGPT service, primary Shadow AI detection target", "fs_code": "FS-001", "im_code": "IM-001", "uc_codes": ["UC-001"], "dt_codes": ["DT-001"], "ch_codes": ["CH-001"], "rs_codes": ["RS-001"], "ev_codes": ["EV-001"], "ob_codes": [], "aimo_standard_version": "{aimo_standard_version}"}},
-  {{"service_name": "Unknown", "usage_type": "unknown", "risk_level": "medium", "category": "Unknown", "confidence": 0.3, "rationale_short": "Cannot identify service from domain pattern", "fs_code": "FS-099", "im_code": "IM-099", "uc_codes": ["UC-099"], "dt_codes": ["DT-099"], "ch_codes": ["CH-099"], "rs_codes": ["RS-099"], "ev_codes": ["EV-099"], "ob_codes": [], "aimo_standard_version": "{aimo_standard_version}"}}
+  {{"service_name": "ChatGPT / OpenAI", "usage_type": "genai", "risk_level": "high", "category": "GenAI", "confidence": 0.95, "rationale_short": "OpenAI's ChatGPT service, primary Shadow AI detection target", "fs_code": "FS-001", "im_code": "IM-001", "uc_codes": ["UC-001"], "dt_codes": ["DT-001"], "ch_codes": ["CH-001"], "rs_codes": ["RS-001"], "lg_codes": ["LG-001"], "ob_codes": [], "aimo_standard_version": "{aimo_standard_version}"}},
+  {{"service_name": "Unknown", "usage_type": "unknown", "risk_level": "medium", "category": "Unknown", "confidence": 0.3, "rationale_short": "Cannot identify service from domain pattern", "fs_code": "FS-099", "im_code": "IM-099", "uc_codes": ["UC-099"], "dt_codes": ["DT-099"], "ch_codes": ["CH-099"], "rs_codes": ["RS-099"], "lg_codes": ["LG-099"], "ob_codes": [], "aimo_standard_version": "{aimo_standard_version}"}}
 ]
 
 ## CRITICAL REMINDERS
 1. Use ONLY codes from the ALLOWED TAXONOMY CODES list above
 2. fs_code and im_code are single strings, NOT arrays
-3. uc_codes, dt_codes, ch_codes, rs_codes, ev_codes, ob_codes are arrays
-4. uc_codes, dt_codes, ch_codes, rs_codes, ev_codes must have at least 1 element
+3. uc_codes, dt_codes, ch_codes, rs_codes, lg_codes, ob_codes are arrays
+4. uc_codes, dt_codes, ch_codes, rs_codes, lg_codes must have at least 1 element
 5. ob_codes can be empty (0 or more allowed)
 6. aimo_standard_version must be "{aimo_standard_version}"
 """
@@ -98,8 +98,8 @@ Please respond with ONLY a valid JSON array. No markdown, no code blocks, no exp
 
 CRITICAL REMINDERS:
 1. fs_code and im_code are single STRINGS, not arrays
-2. uc_codes, dt_codes, ch_codes, rs_codes, ev_codes, ob_codes are ARRAYS
-3. uc_codes, dt_codes, ch_codes, rs_codes, ev_codes must have AT LEAST 1 element
+2. uc_codes, dt_codes, ch_codes, rs_codes, lg_codes, ob_codes are ARRAYS
+3. uc_codes, dt_codes, ch_codes, rs_codes, lg_codes must have AT LEAST 1 element
 4. ob_codes can be empty []
 5. Use ONLY codes from the allowed list
 6. All codes must match pattern XX-NNN (e.g., FS-001)
@@ -127,11 +127,11 @@ Return a single JSON object (not an array) matching this schema:
 {json_schema}
 
 If you cannot identify the service, respond with:
-{{"service_name": "Unknown", "usage_type": "unknown", "risk_level": "medium", "category": "Unknown", "confidence": 0.3, "rationale_short": "Unable to identify service", "fs_code": "FS-099", "im_code": "IM-099", "uc_codes": ["UC-099"], "dt_codes": ["DT-099"], "ch_codes": ["CH-099"], "rs_codes": ["RS-099"], "ev_codes": ["EV-099"], "ob_codes": [], "aimo_standard_version": "{aimo_standard_version}"}}
+{{"service_name": "Unknown", "usage_type": "unknown", "risk_level": "medium", "category": "Unknown", "confidence": 0.3, "rationale_short": "Unable to identify service", "fs_code": "FS-099", "im_code": "IM-099", "uc_codes": ["UC-099"], "dt_codes": ["DT-099"], "ch_codes": ["CH-099"], "rs_codes": ["RS-099"], "lg_codes": ["LG-099"], "ob_codes": [], "aimo_standard_version": "{aimo_standard_version}"}}
 
 CRITICAL:
 - fs_code and im_code are single strings
-- uc_codes, dt_codes, ch_codes, rs_codes, ev_codes, ob_codes are arrays
+- uc_codes, dt_codes, ch_codes, rs_codes, lg_codes, ob_codes are arrays
 - All codes must be from the ALLOWED list above
 """
 
@@ -189,7 +189,7 @@ def get_json_schema_for_prompt(aimo_standard_version: str = DEFAULT_AIMO_STANDAR
   "dt_codes": "array of strings, at least 1 required",
   "ch_codes": "array of strings, at least 1 required",
   "rs_codes": "array of strings, at least 1 required",
-  "ev_codes": "array of strings, at least 1 required",
+  "lg_codes": "array of strings, at least 1 required",
   "ob_codes": "array of strings, 0 or more allowed (can be empty [])",
   "aimo_standard_version": "string, must be '{aimo_standard_version}'"
 }}"""
@@ -242,7 +242,7 @@ def get_taxonomy_codes_section(version: str = DEFAULT_AIMO_STANDARD_VERSION) -> 
         adapter = get_taxonomy_adapter(version=version)
         
         sections = []
-        for dim in ["FS", "IM", "UC", "DT", "CH", "RS", "EV", "OB"]:
+        for dim in ["FS", "IM", "UC", "DT", "CH", "RS", "LG", "OB"]:
             codes = adapter.get_allowed_codes(dim)
             cardinality = adapter.get_cardinality(dim)
             
@@ -317,7 +317,7 @@ def _get_fallback_taxonomy_codes_section() -> str:
   - RS-003: Compliance
   - RS-099: Unknown/Other
 
-### EV (Evidence Type) [1+]
+### LG (Log/Event Type) [1+]
   - EV-001: URL Pattern
   - EV-002: Traffic Volume
   - EV-003: User Agent

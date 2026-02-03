@@ -7,8 +7,8 @@ the artifacts for Engine use. Records version, commit hash, and SHA256
 checksums for audit reproducibility.
 
 Usage:
-    python scripts/sync_aimo_standard.py --version 0.1.7
-    python scripts/sync_aimo_standard.py --version 0.1.7 --cache-dir ~/.cache/aimo/standard
+    python scripts/sync_aimo_standard.py --version 0.1.1
+    python scripts/sync_aimo_standard.py --version 0.1.1 --cache-dir ~/.cache/aimo/standard
 """
 
 import argparse
@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Optional
 
 # Default constants (can be overridden by src/standard_adapter/constants.py)
-AIMO_STANDARD_VERSION_DEFAULT = "0.1.7"
+AIMO_STANDARD_VERSION_DEFAULT = "0.1.1"
 AIMO_STANDARD_SUBMODULE_PATH = "third_party/aimo-standard"
 AIMO_STANDARD_CACHE_DIR_DEFAULT = "~/.cache/aimo/standard"
 

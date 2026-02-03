@@ -177,11 +177,11 @@ def codes_to_dict(
     dt_codes: Optional[list[str]] = None,
     ch_codes: Optional[list[str]] = None,
     rs_codes: Optional[list[str]] = None,
-    ev_codes: Optional[list[str]] = None,
+    lg_codes: Optional[list[str]] = None,
     ob_codes: Optional[list[str]] = None
 ) -> dict[str, list[str]]:
     """
-    Convert individual code arguments to a dimension dict.
+    Convert individual code arguments to a dimension dict (Standard 0.1.1: LG).
     
     Converts single-value dimensions (FS, IM) to single-element lists
     for consistent handling.
@@ -193,15 +193,11 @@ def codes_to_dict(
         dt_codes: DT codes (list)
         ch_codes: CH codes (list)
         rs_codes: RS codes (list)
-        ev_codes: EV codes (list)
+        lg_codes: LG codes (list) — Log/Event Type
         ob_codes: OB codes (list)
     
     Returns:
         Dict mapping dimension -> list of codes
-    
-    Examples:
-        >>> codes_to_dict(fs_code="FS-001", im_code="IM-001", uc_codes=["UC-001"])
-        {'FS': ['FS-001'], 'IM': ['IM-001'], 'UC': ['UC-001'], ...}
     """
     return {
         "FS": [fs_code] if fs_code else [],
@@ -210,7 +206,7 @@ def codes_to_dict(
         "DT": dt_codes or [],
         "CH": ch_codes or [],
         "RS": rs_codes or [],
-        "EV": ev_codes or [],
+        "LG": lg_codes or [],
         "OB": ob_codes or [],
     }
 
@@ -245,7 +241,8 @@ def dict_to_db_columns(codes_dict: dict[str, list[str]]) -> dict[str, str]:
     result["dt_codes_json"] = canonical_json_array(codes_dict.get("DT", []))
     result["ch_codes_json"] = canonical_json_array(codes_dict.get("CH", []))
     result["rs_codes_json"] = canonical_json_array(codes_dict.get("RS", []))
-    result["ev_codes_json"] = canonical_json_array(codes_dict.get("EV", []))
+    # LG stored in ev_codes_json column (Standard 0.1.1)
+    result["ev_codes_json"] = canonical_json_array(codes_dict.get("LG", []) or codes_dict.get("EV", []))
     result["ob_codes_json"] = canonical_json_array(codes_dict.get("OB", []))
     
     return result
@@ -278,14 +275,14 @@ def db_columns_to_dict(
         "DT": parse_json_array(dt_codes_json),
         "CH": parse_json_array(ch_codes_json),
         "RS": parse_json_array(rs_codes_json),
-        "EV": parse_json_array(ev_codes_json),
+        "LG": parse_json_array(ev_codes_json),  # ev_codes_json stores LG (Standard 0.1.1)
         "OB": parse_json_array(ob_codes_json),
     }
 
 
 def classification_to_db_record(
     classification: dict,
-    aimo_standard_version: str = "0.1.7"
+    aimo_standard_version: str = "0.1.1"
 ) -> dict:
     """
     Convert a classification result (from LLM or Rule) to DB record format.
@@ -335,19 +332,18 @@ def classification_to_db_record(
         result["dt_codes_json"] = canonical_json_array(classification.get("dt_codes", []))
         result["ch_codes_json"] = canonical_json_array(classification.get("ch_codes", []))
         result["rs_codes_json"] = canonical_json_array(classification.get("rs_codes", []))
-        result["ev_codes_json"] = canonical_json_array(classification.get("ev_codes", []))
+        lg_codes = classification.get("lg_codes", []) or classification.get("ev_codes", [])
+        result["ev_codes_json"] = canonical_json_array(lg_codes)
         result["ob_codes_json"] = canonical_json_array(classification.get("ob_codes", []))
         
         # Schema version
         result["taxonomy_schema_version"] = classification.get("aimo_standard_version", aimo_standard_version)
         
-        # Legacy columns for backward compatibility
-        # First element of each array, or empty string
+        # Legacy columns for backward compatibility (ev_code stores first LG code)
         uc_codes = classification.get("uc_codes", [])
         dt_codes = classification.get("dt_codes", [])
         ch_codes = classification.get("ch_codes", [])
         rs_codes = classification.get("rs_codes", [])
-        ev_codes = classification.get("ev_codes", [])
         ob_codes = classification.get("ob_codes", [])
         
         result["fs_uc_code"] = "DEPRECATED"  # Prevent misuse
@@ -355,7 +351,7 @@ def classification_to_db_record(
         result["ch_code"] = ch_codes[0] if ch_codes else ""
         result["rs_code"] = rs_codes[0] if rs_codes else ""
         result["ob_code"] = ob_codes[0] if ob_codes else ""
-        result["ev_code"] = ev_codes[0] if ev_codes else ""
+        result["ev_code"] = lg_codes[0] if lg_codes else ""
         
     else:
         # Legacy 7-code format - convert
@@ -375,13 +371,13 @@ def classification_to_db_record(
         ch = classification.get("ch_code", "")
         rs = classification.get("rs_code", "")
         ob = classification.get("ob_code", "")
-        ev = classification.get("ev_code", "")
+        ev = classification.get("ev_code", "")  # Legacy column stores LG code
         
         result["uc_codes_json"] = "[]"  # Not available in legacy
         result["dt_codes_json"] = canonical_json_array([dt] if dt else [])
         result["ch_codes_json"] = canonical_json_array([ch] if ch else [])
         result["rs_codes_json"] = canonical_json_array([rs] if rs else [])
-        result["ev_codes_json"] = canonical_json_array([ev] if ev else [])
+        result["ev_codes_json"] = canonical_json_array([ev] if ev else [])  # LG in ev column
         result["ob_codes_json"] = canonical_json_array([ob] if ob else [])
         
         result["taxonomy_schema_version"] = classification.get("taxonomy_version", aimo_standard_version)
@@ -439,7 +435,7 @@ def needs_taxonomy_review(classification: dict) -> bool:
             return True
         if not classification.get("rs_codes"):
             return True
-        if not classification.get("ev_codes"):
+        if not classification.get("lg_codes") and not classification.get("ev_codes"):
             return True
     else:
         # Legacy format - check key fields

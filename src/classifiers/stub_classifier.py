@@ -1,7 +1,7 @@
 """
 Stub Classifier for Contract Testing
 
-A deterministic classifier that generates AIMO Standard v0.1.7+ compliant
+A deterministic classifier that generates AIMO Standard v0.1.1+ compliant
 8-dimension classifications WITHOUT calling LLM.
 
 This classifier is used for:
@@ -13,7 +13,7 @@ IMPORTANT:
 - All codes are fetched from Standard Adapter (no hardcoding)
 - Cardinality rules are strictly followed:
   - FS, IM: Exactly 1
-  - UC, DT, CH, RS, EV: 1+
+  - UC, DT, CH, RS, LG: 1+
   - OB: 0+
 
 Environment Variable:
@@ -74,7 +74,7 @@ class StubClassifier:
                 # Exactly 1 (FS, IM)
                 codes[dim] = [allowed[0]]
             else:
-                # 1+ (UC, DT, CH, RS, EV) - select first code
+                # 1+ (UC, DT, CH, RS, LG) - select first code
                 codes[dim] = [allowed[0]]
         
         return codes
@@ -111,7 +111,7 @@ class StubClassifier:
             "dt_codes": self._default_codes["DT"].copy(),
             "ch_codes": self._default_codes["CH"].copy(),
             "rs_codes": self._default_codes["RS"].copy(),
-            "ev_codes": self._default_codes["EV"].copy(),
+            "lg_codes": self._default_codes["LG"].copy(),
             "ob_codes": self._default_codes["OB"].copy(),
             
             # Metadata
